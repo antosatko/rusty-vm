@@ -24,7 +24,7 @@ pub mod runtime {
                 code: vec![],
                 code_ptr: 0,
                 heap: vec![],
-                heap_open_idxs: vec![],
+                garbage: vec![],
                 stack_ptr: 0,
             }
         }
@@ -566,7 +566,7 @@ pub mod runtime {
         fn allocate_obj(&mut self, size: usize) -> usize {
             let mut data = Vec::new();
             data.resize(size, Types::Null);
-            if let Some(idx) = self.heap_open_idxs.pop() {
+            if let Some(idx) = self.garbage.pop() {
                 self.heap[idx] = data;
                 return idx;
             }
@@ -598,8 +598,8 @@ pub mod runtime {
                 }
                 if *mark {
                     self.heap[i].clear();
-                    if !self.heap_open_idxs.contains(&i) {
-                        self.heap_open_idxs.push(i);
+                    if !self.garbage.contains(&i) {
+                        self.garbage.push(i);
                     }
                 }
             }
@@ -842,7 +842,7 @@ pub mod runtime_types {
         pub registers: Registers,
         pub code: Vec<Instructions>,
         pub code_ptr: usize,
-        pub heap_open_idxs: Vec<usize>,
+        pub garbage: Vec<usize>,
         pub heap: Vec<Vec<Types>>,
     }
     /// a structure used to register data on heap
