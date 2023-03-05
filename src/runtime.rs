@@ -542,9 +542,62 @@ pub mod runtime {
                             self.registers[POINTER_REG],
                             self.code[self.code_ptr],
                         ));
-                    } 
+                    }
                     self.next_line();*/
                     todo!();
+                }
+                CpRng(original, new, len) => {
+                    let new_ptr = if let Types::Pointer(u_size, kind) = self.registers[new] {
+                        (u_size, kind)
+                    } else {
+                        return panic_rt(ErrTypes::WrongTypeOperation(
+                            self.registers[new],
+                            CpRng(0, 0, 0),
+                        ));
+                    };
+                    if let Types::Pointer(u_size, kind) = self.registers[original] {
+                        for i in 0..len {
+                            let value = match kind {
+                                PointerTypes::Object => self.heap[u_size][i],
+                                PointerTypes::Stack => self.stack[u_size + i],
+                                PointerTypes::Heap(idx) => self.heap[u_size][i + idx],
+                            };
+                            match new_ptr.1 {
+                                PointerTypes::Object => {
+                                    self.heap[new_ptr.0][i] = value;
+                                }
+                                PointerTypes::Stack => {
+                                    self.stack[new_ptr.0 + i] = value;
+                                }
+                                PointerTypes::Heap(idx) => {
+                                    self.heap[new_ptr.0][idx + i] = value;
+                                }
+                            }
+                        }
+                    } else {
+                        return panic_rt(ErrTypes::WrongTypeOperation(
+                            self.registers[original],
+                            CpRng(0, 0, 0),
+                        ));
+                    }
+                }
+                TRng(val, len) => {
+                    let value = self.registers[val];
+                    if let Types::Pointer(u_size, kind) = self.registers[POINTER_REG] {
+                        for i in 0..len {
+                            match kind {
+                                PointerTypes::Object => {
+                                    self.heap[u_size][i] = value;
+                                }
+                                PointerTypes::Stack => {
+                                    self.stack[u_size + i] = value;
+                                }
+                                PointerTypes::Heap(idx) => {
+                                    self.heap[u_size][i + idx] = value;
+                                }
+                            }
+                        }
+                    }
                 }
                 Type(reg1, reg2) => {
                     use std::mem::discriminant;
@@ -1025,6 +1078,10 @@ pub mod runtime_types {
         AlcS(usize),
         /// Index known: index | indexing operation where index is known at compile time (generally for structures but can be also used for arrays or single values on heap)
         IdxK(usize),
+        /// To range: val_reg len | takes pointer at reg(POINTER_REG) as a starting point and fills len to the right with value on reg(value_reg)
+        TRng(usize, usize),
+        /// Copy range: original_ptr new_ptr len | copies range starting at reg(original_ptr) with size len to reg(new_ptr)
+        CpRng(usize, usize, usize),
     }
     impl fmt::Display for Instructions {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -1072,6 +1129,8 @@ pub mod runtime_types {
                 Instructions::Move(_, _) => "Move",
                 Instructions::Sweep => "Sweep",
                 Instructions::SweepUnoptimized => "SweepUnoptimized",
+                Instructions::TRng(_, _) => "ToRange",
+                Instructions::CpRng(_, _, _) => "CopyRange",
             };
             write!(f, "{str}")
         }
