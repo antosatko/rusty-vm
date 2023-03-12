@@ -26,6 +26,8 @@ pub mod runtime {
                 heap: vec![],
                 garbage: vec![],
                 stack_ptr: 0,
+                non_primitives: vec![],
+                traits: vec![],
             }
         }
         pub fn run(&mut self) -> bool {
@@ -517,6 +519,10 @@ pub mod runtime {
                     self.next_line();
                 }
                 Cal(_procedure, _args) => {}
+                Mtd(trt, method) => {
+                    self.call_stack[self.stack_ptr].code_ptr = self.code_ptr;
+                    self.code_ptr = self.traits[trt][method];
+                }
                 End => {
                     return false;
                 }
@@ -611,6 +617,9 @@ pub mod runtime {
                         return false;
                     }
                     self.next_line();
+                }
+                Break(_) => {
+                    todo!( )
                 }
             }
             return true;
@@ -897,6 +906,8 @@ pub mod runtime_types {
         pub code_ptr: usize,
         pub garbage: Vec<usize>,
         pub heap: Vec<Vec<Types>>,
+        pub non_primitives: Vec<NonPrimitiveType>,
+        pub traits: Vec<Trait>
     }
     /// a structure used to register data on heap
     #[derive(Clone, Debug)]
@@ -915,7 +926,23 @@ pub mod runtime_types {
         Pointer(usize, PointerTypes),
         CodePointer(usize),
         Null,
+        /// can be considered a header for non-primitive types
+        /// ID
+        NonPrimitive(usize)
     }
+    #[derive(Clone, Copy, Debug)]
+    pub enum NonPrimitiveTypes {
+        Array,
+        Struct,
+    }
+    #[derive(Debug)]
+    pub struct NonPrimitiveType {
+        pub name: String,
+        pub kind: NonPrimitiveTypes,
+        pub len: usize,
+        pub pointers: usize
+    }
+    pub type Trait = Vec<usize>;
     use std::fmt;
     impl fmt::Display for Types {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -930,6 +957,7 @@ pub mod runtime_types {
                     Types::Null => write!(f, "Null"),
                     Types::Pointer(_, _) => write!(f, "Pointer"),
                     Types::Usize(_) => write!(f, "Usize"),
+                    Types::NonPrimitive(_) => write!(f, "Non-primitive")
                 }
             } else if f.sign_plus() {
                 match *self {
@@ -944,6 +972,7 @@ pub mod runtime_types {
                     Types::Null => write!(f, "Null"),
                     Types::Pointer(loc, kind) => write!(f, "Pointer<{loc}, {kind}>"),
                     Types::Usize(num) => write!(f, "Usize<{num}>"),
+                    Types::NonPrimitive(id) => write!(f, "Non-primitive<{id}>")
                 }
             } else {
                 match *self {
@@ -956,7 +985,16 @@ pub mod runtime_types {
                     Types::Null => write!(f, "Null"),
                     Types::Pointer(loc, _) => write!(f, "{loc}"),
                     Types::Usize(num) => write!(f, "{num}"),
+                    Types::NonPrimitive(id) => write!(f, "{id}")
                 }
+            }
+        }
+    }
+    impl fmt::Display for NonPrimitiveTypes {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            match *self {
+                NonPrimitiveTypes::Array => write!(f, "Array"),
+                NonPrimitiveTypes::Struct => write!(f, "Struct")
             }
         }
     }
@@ -1007,12 +1045,8 @@ pub mod runtime_types {
         Ptr(usize),
         /// Index: idx | gets pointer from reg(<pointer>) repairs it and adds reg(<idx>)
         Idx(usize),
-        /// Repair: pointer | Repairs pointer in reg(<pointer>)
-        // Repp, removed due to it being just Idx(0) will be replaced with static Indexing in the future
         /// Allocate: size_reg pointers_len | reserves <size> on heap and stores location in registers(<reg>)
         Alc(usize),
-        /// Deallocate: | frees heap(<reg>)
-        // Dalc, removed to make room for GC
         /// Reallocate: size_reg | resizes heap(<reg>) for <size>; additional space is filled with null
         RAlc(usize),
         /// Goto: pos | moves code_pointer to <pos>
@@ -1082,6 +1116,10 @@ pub mod runtime_types {
         TRng(usize, usize),
         /// Copy range: original_ptr new_ptr len | copies range starting at reg(original_ptr) with size len to reg(new_ptr)
         CpRng(usize, usize, usize),
+        /// Break: code | program exits with a break code, indicating that it should be resumed at some point
+        Break(usize),
+        /// Method: trait method | calls method belonging trait
+        Mtd(usize, usize),
     }
     impl fmt::Display for Instructions {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -1092,7 +1130,6 @@ pub mod runtime_types {
                 Instructions::And => "And",
                 Instructions::Brnc(_, _) => "Branch",
                 Instructions::Cal(_, _) => "Call",
-                //Instructions::Dalc => "Deallocation",
                 Instructions::Debug(_) => "Debug",
                 Instructions::Div => "Division",
                 Instructions::End => "End",
@@ -1114,7 +1151,6 @@ pub mod runtime_types {
                 Instructions::Rd(_, _) => "Read",
                 Instructions::Rdc(_, _) => "ReadConst",
                 Instructions::Rdp(_) => "Dereference",
-                //Instructions::Repp => "RepirePointer",
                 Instructions::Res(_, _) => "Reserve",
                 Instructions::Ret => "Return",
                 Instructions::Sub => "Subtract",
@@ -1131,6 +1167,8 @@ pub mod runtime_types {
                 Instructions::SweepUnoptimized => "SweepUnoptimized",
                 Instructions::TRng(_, _) => "ToRange",
                 Instructions::CpRng(_, _, _) => "CopyRange",
+                Instructions::Mtd(_, _) => "Method",
+                Instructions::Break(_) => "Break",
             };
             write!(f, "{str}")
         }
