@@ -1,6 +1,0 @@
-# Rusty Danda binary
-
-binary is not meant to be human readable
- - stack indexing starts at 1 (this is not a feature, it is just so minor bug i honestly dont care)
- - call: res - frz - set args - rret - ret
- - code ptr on call stack must always point to last location and should be treated as immutable
