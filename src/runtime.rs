@@ -1120,6 +1120,12 @@ pub mod runtime_types {
         Break(usize),
         /// Method: trait method | calls method belonging trait
         Mtd(usize, usize),
+        /// Panic | program enters panic mode, returning from all stacks until exception is caught
+        Panic,
+        /// Catch | catches an error and returns program to normal mode, ignored if its read in normal mode
+        Catch,
+        /// Catch ID: id | same as normal catch but responds only to exception with same id
+        CatchId(usize)
     }
     impl fmt::Display for Instructions {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
