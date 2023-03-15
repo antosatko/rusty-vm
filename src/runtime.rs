@@ -7,6 +7,8 @@ pub mod runtime {
 
     use colored::Colorize;
 
+    use crate::runtime::runtime_types;
+
     use super::runtime_error::*;
     use super::runtime_types::*;
 
@@ -28,6 +30,9 @@ pub mod runtime {
                 stack_ptr: 0,
                 non_primitives: vec![],
                 traits: vec![],
+                break_code: None,
+                catches: vec![],
+                exit_code: ExitCodes::End,
             }
         }
         pub fn run(&mut self) -> bool {
@@ -618,9 +623,51 @@ pub mod runtime {
                     }
                     self.next_line();
                 }
-                Break(_) => {
-                    todo!( )
+                Break(code) => {
+                    self.break_code = Some(code);
+                    return false
                 }
+                Catch => {
+                    self.catches.push(runtime_types::Catch {
+                        code_ptr: self.code_ptr,
+                        id: None,
+                    });
+                    self.next_line()
+                }
+                CatchId(id) => {
+                    self.catches.push(runtime_types::Catch {
+                        code_ptr: self.code_ptr,
+                        id: Some(id),
+                    });
+                    self.next_line()
+                }
+                DelCatch => {
+                    self.catches.pop();
+                    self.next_line()
+                }
+                Panic => {
+                    let mut i = self.catches.len();
+                    loop {
+                        if i == 0 {
+                            self.exit_code = ExitCodes::Exception;
+                            return false;
+                        }
+                        i -= 1;
+                        if let None = self.catches[i].id {
+                            self.code_ptr = self.catches[i].code_ptr;
+                            break
+                        }else if let Some(n) = self.catches[i].id {
+                            if let Types::NonPrimitive(e_type) = self.registers[RETURN_REG] {
+                                if n == e_type {
+                                    self.code_ptr = self.catches[i].code_ptr
+                                }
+                            }
+                            break
+                        }
+                    }
+                    self.catches.truncate(i);
+                    self.next_line();
+                },
             }
             return true;
         }
@@ -843,7 +890,7 @@ pub mod runtime {
 
 pub mod runtime_error {
     use super::runtime_types::*;
-    #[repr(C, u8)]
+    #[derive(Debug)]
     pub enum ErrTypes {
         CrossTypeOperation(Types, Types, Instructions),
         WrongTypeOperation(Types, Instructions),
@@ -907,7 +954,26 @@ pub mod runtime_types {
         pub garbage: Vec<usize>,
         pub heap: Vec<Vec<Types>>,
         pub non_primitives: Vec<NonPrimitiveType>,
-        pub traits: Vec<Trait>
+        pub traits: Vec<Trait>,
+        pub break_code: Option<usize>,
+        pub catches: Vec<Catch>,
+        pub exit_code: ExitCodes,
+    }
+    pub struct Catch {
+        pub code_ptr: usize,
+        pub id: Option<usize>
+    }
+    /// indicates why program exited
+    #[derive(Debug)]
+    pub enum ExitCodes {
+        /// program ended
+        End,
+        /// program run into user defined break and is expected to continue in the future
+        Break(usize),
+        /// an exception was thrown but never caught
+        Exception,
+        /// unrecoverable error occured (if you believe this is not meant to happen, contact me)
+        Internal(runtime_error::ErrTypes)
     }
     /// a structure used to register data on heap
     #[derive(Clone, Debug)]
@@ -944,6 +1010,8 @@ pub mod runtime_types {
     }
     pub type Trait = Vec<usize>;
     use std::fmt;
+
+    use super::runtime_error;
     impl fmt::Display for Types {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             if f.alternate() {
@@ -1122,10 +1190,12 @@ pub mod runtime_types {
         Mtd(usize, usize),
         /// Panic | program enters panic mode, returning from all stacks until exception is caught
         Panic,
-        /// Catch | catches an error and returns program to normal mode, ignored if its read in normal mode
+        /// Catch | catches an error and returns program to normal mode, cached if read in normal mode
         Catch,
         /// Catch ID: id | same as normal catch but responds only to exception with same id
-        CatchId(usize)
+        CatchId(usize),
+        /// Delete catch | deletes one chatch instruction from cache
+        DelCatch,
     }
     impl fmt::Display for Instructions {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -1175,6 +1245,10 @@ pub mod runtime_types {
                 Instructions::CpRng(_, _, _) => "CopyRange",
                 Instructions::Mtd(_, _) => "Method",
                 Instructions::Break(_) => "Break",
+                Instructions::Panic => "Panic",
+                Instructions::Catch => "Catch",
+                Instructions::CatchId(_) => "Catch",
+                Instructions::DelCatch => "DeleteCatch",
             };
             write!(f, "{str}")
         }
