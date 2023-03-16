@@ -31,7 +31,13 @@ pub mod runtime {
                 non_primitives: vec![],
                 traits: vec![],
                 break_code: None,
-                catches: vec![],
+                catches: Catches {
+                    catches_ptr: 0,
+                    cache: [Catch {
+                        code_ptr: 0,
+                        id: None,
+                    }; 256],
+                },
                 exit_code: ExitCodes::End,
             }
         }
@@ -45,7 +51,7 @@ pub mod runtime {
                     if let Types::Pointer(num2, _) = self.registers[GENERAL_REG2] {
                         self.registers[GENERAL_REG1] = Types::Bool($num1.$operand(&num2));
                     } else {
-                        return panic_rt(ErrTypes::CrossTypeOperation(
+                        return self.panic_rt(ErrTypes::CrossTypeOperation(
                             self.registers[GENERAL_REG1],
                             self.registers[GENERAL_REG2],
                             self.code[self.code_ptr],
@@ -56,7 +62,7 @@ pub mod runtime {
                     if let Types::$type(num2) = self.registers[GENERAL_REG2] {
                         self.registers[GENERAL_REG1] = Types::Bool($num1.$operand(&num2));
                     } else {
-                        return panic_rt(ErrTypes::CrossTypeOperation(
+                        return self.panic_rt(ErrTypes::CrossTypeOperation(
                             self.registers[GENERAL_REG1],
                             self.registers[GENERAL_REG2],
                             self.code[self.code_ptr],
@@ -67,7 +73,7 @@ pub mod runtime {
                     if let Types::$type(num2) = self.registers[GENERAL_REG2] {
                         self.registers[GENERAL_REG1] = Types::$type($num1.$operand(num2));
                     } else {
-                        return panic_rt(ErrTypes::CrossTypeOperation(
+                        return self.panic_rt(ErrTypes::CrossTypeOperation(
                             self.registers[GENERAL_REG1],
                             self.registers[GENERAL_REG2],
                             self.code[self.code_ptr],
@@ -78,7 +84,7 @@ pub mod runtime {
                     if let Types::$type(num2) = self.registers[GENERAL_REG2] {
                         self.registers[GENERAL_REG1] = Types::$type($num1 % num2);
                     } else {
-                        return panic_rt(ErrTypes::CrossTypeOperation(
+                        return self.panic_rt(ErrTypes::CrossTypeOperation(
                             self.registers[GENERAL_REG1],
                             self.registers[GENERAL_REG2],
                             self.code[self.code_ptr],
@@ -108,14 +114,14 @@ pub mod runtime {
                                 self.heap[u_size][loc] = self.registers[value_reg];
                             }
                             PointerTypes::Object => {
-                                return panic_rt(ErrTypes::Expected(
+                                return self.panic_rt(ErrTypes::Expected(
                                     Types::Pointer(0, PointerTypes::Heap(0)),
                                     self.registers[POINTER_REG],
                                 ));
                             }
                         }
                     } else {
-                        return panic_rt(ErrTypes::Expected(
+                        return self.panic_rt(ErrTypes::Expected(
                             Types::Pointer(0, PointerTypes::Heap(0)),
                             self.registers[POINTER_REG],
                         ));
@@ -132,14 +138,14 @@ pub mod runtime {
                                 self.registers[cash_reg] = self.heap[u_size][idx];
                             }
                             PointerTypes::Object => {
-                                return panic_rt(ErrTypes::InvalidType(
+                                return self.panic_rt(ErrTypes::InvalidType(
                                     self.registers[POINTER_REG],
                                     Types::Pointer(0, PointerTypes::Heap(0)),
                                 ));
                             }
                         }
                     } else {
-                        return panic_rt(ErrTypes::InvalidType(
+                        return self.panic_rt(ErrTypes::InvalidType(
                             self.registers[POINTER_REG],
                             Types::Pointer(0, PointerTypes::Heap(0)),
                         ));
@@ -168,20 +174,20 @@ pub mod runtime {
                                         Types::Pointer(u_size + index, PointerTypes::Stack);
                                 }
                                 PointerTypes::Heap(_) => {
-                                    return panic_rt(ErrTypes::WrongTypeOperation(
+                                    return self.panic_rt(ErrTypes::WrongTypeOperation(
                                         self.registers[POINTER_REG],
                                         self.code[self.code_ptr],
                                     ));
                                 }
                             }
                         } else {
-                            return panic_rt(ErrTypes::WrongTypeOperation(
+                            return self.panic_rt(ErrTypes::WrongTypeOperation(
                                 self.registers[POINTER_REG],
                                 self.code[self.code_ptr],
                             ));
                         }
                     } else {
-                        return panic_rt(ErrTypes::WrongTypeOperation(
+                        return self.panic_rt(ErrTypes::WrongTypeOperation(
                             self.registers[POINTER_REG],
                             self.code[self.code_ptr],
                         ));
@@ -200,14 +206,14 @@ pub mod runtime {
                                     Types::Pointer(u_size + index, PointerTypes::Stack);
                             }
                             PointerTypes::Heap(_) => {
-                                return panic_rt(ErrTypes::WrongTypeOperation(
+                                return self.panic_rt(ErrTypes::WrongTypeOperation(
                                     self.registers[POINTER_REG],
                                     self.code[self.code_ptr],
                                 ));
                             }
                         }
                     } else {
-                        return panic_rt(ErrTypes::WrongTypeOperation(
+                        return self.panic_rt(ErrTypes::WrongTypeOperation(
                             self.registers[POINTER_REG],
                             self.code[self.code_ptr],
                         ));
@@ -218,7 +224,7 @@ pub mod runtime {
                         self.registers[POINTER_REG] =
                             Types::Pointer(self.allocate_obj(size), PointerTypes::Object);
                     } else {
-                        return panic_rt(ErrTypes::Expected(
+                        return self.panic_rt(ErrTypes::Expected(
                             Types::Usize(0),
                             self.registers[size_reg],
                         ));
@@ -237,21 +243,21 @@ pub mod runtime {
                                 if let Types::Usize(new_size) = self.registers[size_reg] {
                                     self.resize_obj(u_size, new_size);
                                 } else {
-                                    return panic_rt(ErrTypes::WrongTypeOperation(
+                                    return self.panic_rt(ErrTypes::WrongTypeOperation(
                                         self.registers[size_reg],
                                         self.code[self.code_ptr],
                                     ));
                                 }
                             }
                             _ => {
-                                return panic_rt(ErrTypes::WrongTypeOperation(
+                                return self.panic_rt(ErrTypes::WrongTypeOperation(
                                     self.registers[POINTER_REG],
                                     self.code[self.code_ptr],
                                 ))
                             }
                         }
                     } else {
-                        return panic_rt(ErrTypes::WrongTypeOperation(
+                        return self.panic_rt(ErrTypes::WrongTypeOperation(
                             self.registers[POINTER_REG],
                             self.code[self.code_ptr],
                         ));
@@ -277,7 +283,7 @@ pub mod runtime {
                     if let Types::CodePointer(u_size) = self.registers[CODE_PTR_REG] {
                         self.code_ptr = u_size
                     } else {
-                        return panic_rt(ErrTypes::InvalidType(
+                        return self.panic_rt(ErrTypes::InvalidType(
                             self.registers[CODE_PTR_REG],
                             Types::CodePointer(0),
                         ));
@@ -287,7 +293,7 @@ pub mod runtime {
                     if let Types::Bool(bool) = self.registers[GENERAL_REG1] {
                         self.code_ptr = if bool { pos1 } else { pos2 };
                     } else {
-                        return panic_rt(ErrTypes::WrongTypeOperation(
+                        return self.panic_rt(ErrTypes::WrongTypeOperation(
                             self.registers[GENERAL_REG1],
                             self.code[self.code_ptr],
                         ));
@@ -317,7 +323,7 @@ pub mod runtime {
                                 println!("Samik mel pravdu, ale tohle stejne nikdy neuvidis ;p");
                             }
                         }
-                        return panic_rt(ErrTypes::StackOverflow);
+                        return self.panic_rt(ErrTypes::StackOverflow);
                     }
                     self.call_stack[self.stack_ptr].end = end;
                     self.call_stack[self.stack_ptr].pointers_len = pointers_len;
@@ -349,7 +355,7 @@ pub mod runtime {
                         Types::Byte(num1) => operation!(Byte, add, num1),
                         Types::Usize(num1) => operation!(Usize, add, num1),
                         _ => {
-                            return panic_rt(ErrTypes::WrongTypeOperation(
+                            return self.panic_rt(ErrTypes::WrongTypeOperation(
                                 self.registers[GENERAL_REG1],
                                 self.code[self.code_ptr],
                             ));
@@ -364,7 +370,7 @@ pub mod runtime {
                         Types::Byte(num1) => operation!(Byte, sub, num1),
                         Types::Usize(num1) => operation!(Usize, sub, num1),
                         _ => {
-                            return panic_rt(ErrTypes::WrongTypeOperation(
+                            return self.panic_rt(ErrTypes::WrongTypeOperation(
                                 self.registers[GENERAL_REG1],
                                 self.code[self.code_ptr],
                             ));
@@ -379,7 +385,7 @@ pub mod runtime {
                         Types::Byte(num1) => operation!(Byte, mul, num1),
                         Types::Usize(num1) => operation!(Usize, mul, num1),
                         _ => {
-                            return panic_rt(ErrTypes::WrongTypeOperation(
+                            return self.panic_rt(ErrTypes::WrongTypeOperation(
                                 self.registers[GENERAL_REG1],
                                 self.code[self.code_ptr],
                             ));
@@ -394,7 +400,7 @@ pub mod runtime {
                         Types::Byte(num1) => operation!(Byte, div, num1),
                         Types::Usize(num1) => operation!(Usize, div, num1),
                         _ => {
-                            return panic_rt(ErrTypes::WrongTypeOperation(
+                            return self.panic_rt(ErrTypes::WrongTypeOperation(
                                 self.registers[GENERAL_REG1],
                                 self.code[self.code_ptr],
                             ));
@@ -409,7 +415,7 @@ pub mod runtime {
                         Types::Byte(num1) => operation!(Byte, %, num1),
                         Types::Usize(num1) => operation!(Usize, %, num1),
                         _ => {
-                            return panic_rt(ErrTypes::WrongTypeOperation(
+                            return self.panic_rt(ErrTypes::WrongTypeOperation(
                                 self.registers[GENERAL_REG1],
                                 self.code[self.code_ptr],
                             ));
@@ -427,7 +433,7 @@ pub mod runtime {
                         Types::Bool(var1) => operation!(Bool, eq, var1, bool),
                         Types::Char(char1) => operation!(Char, eq, char1, bool),
                         _ => {
-                            return panic_rt(ErrTypes::WrongTypeOperation(
+                            return self.panic_rt(ErrTypes::WrongTypeOperation(
                                 self.registers[GENERAL_REG1],
                                 self.code[self.code_ptr],
                             ));
@@ -443,7 +449,7 @@ pub mod runtime {
                         Types::Usize(num1) => operation!(Usize, gt, num1, bool),
                         Types::Char(char1) => operation!(Char, gt, char1, bool),
                         _ => {
-                            return panic_rt(ErrTypes::WrongTypeOperation(
+                            return self.panic_rt(ErrTypes::WrongTypeOperation(
                                 self.registers[GENERAL_REG1],
                                 self.code[self.code_ptr],
                             ));
@@ -459,7 +465,7 @@ pub mod runtime {
                         Types::Usize(num1) => operation!(Usize, lt, num1, bool),
                         Types::Char(char1) => operation!(Char, lt, char1, bool),
                         _ => {
-                            return panic_rt(ErrTypes::WrongTypeOperation(
+                            return self.panic_rt(ErrTypes::WrongTypeOperation(
                                 self.registers[GENERAL_REG1],
                                 self.code[self.code_ptr],
                             ));
@@ -473,7 +479,7 @@ pub mod runtime {
                             if let Types::Bool(var2) = self.registers[GENERAL_REG2] {
                                 self.registers[GENERAL_REG1] = Types::Bool(var1 && var2)
                             } else {
-                                return panic_rt(ErrTypes::CrossTypeOperation(
+                                return self.panic_rt(ErrTypes::CrossTypeOperation(
                                     self.registers[GENERAL_REG1],
                                     self.registers[GENERAL_REG2],
                                     self.code[self.code_ptr],
@@ -481,7 +487,7 @@ pub mod runtime {
                             }
                         }
                         _ => {
-                            return panic_rt(ErrTypes::WrongTypeOperation(
+                            return self.panic_rt(ErrTypes::WrongTypeOperation(
                                 self.registers[GENERAL_REG1],
                                 self.code[self.code_ptr],
                             ));
@@ -495,7 +501,7 @@ pub mod runtime {
                             if let Types::Bool(var2) = self.registers[GENERAL_REG2] {
                                 self.registers[GENERAL_REG1] = Types::Bool(var1 || var2)
                             } else {
-                                return panic_rt(ErrTypes::CrossTypeOperation(
+                                return self.panic_rt(ErrTypes::CrossTypeOperation(
                                     self.registers[GENERAL_REG1],
                                     self.registers[GENERAL_REG2],
                                     self.code[self.code_ptr],
@@ -503,7 +509,7 @@ pub mod runtime {
                             }
                         }
                         _ => {
-                            return panic_rt(ErrTypes::WrongTypeOperation(
+                            return self.panic_rt(ErrTypes::WrongTypeOperation(
                                 self.registers[GENERAL_REG1],
                                 self.code[self.code_ptr],
                             ));
@@ -515,7 +521,7 @@ pub mod runtime {
                     match self.registers[GENERAL_REG1] {
                         Types::Bool(var) => self.registers[GENERAL_REG1] = Types::Bool(!var),
                         _ => {
-                            return panic_rt(ErrTypes::WrongTypeOperation(
+                            return self.panic_rt(ErrTypes::WrongTypeOperation(
                                 self.registers[GENERAL_REG1],
                                 self.code[self.code_ptr],
                             ));
@@ -543,13 +549,13 @@ pub mod runtime {
                                 self.registers[POINTER_REG] =
                                     Types::Usize(self.heap[registry].data.len())
                             } else {
-                                return panic_rt(ErrTypes::PointerInBrokenState);
+                                return self.panic_rt(ErrTypes::PointerInBrokenState);
                             }
                         } else {
-                            return panic_rt(ErrTypes::NotObject(self.registers[POINTER_REG]));
+                            return self.panic_rt(ErrTypes::NotObject(self.registers[POINTER_REG]));
                         }
                     } else {
-                        return panic_rt(ErrTypes::WrongTypeOperation(
+                        return self.panic_rt(ErrTypes::WrongTypeOperation(
                             self.registers[POINTER_REG],
                             self.code[self.code_ptr],
                         ));
@@ -561,7 +567,7 @@ pub mod runtime {
                     let new_ptr = if let Types::Pointer(u_size, kind) = self.registers[new] {
                         (u_size, kind)
                     } else {
-                        return panic_rt(ErrTypes::WrongTypeOperation(
+                        return self.panic_rt(ErrTypes::WrongTypeOperation(
                             self.registers[new],
                             CpRng(0, 0, 0),
                         ));
@@ -586,7 +592,7 @@ pub mod runtime {
                             }
                         }
                     } else {
-                        return panic_rt(ErrTypes::WrongTypeOperation(
+                        return self.panic_rt(ErrTypes::WrongTypeOperation(
                             self.registers[original],
                             CpRng(0, 0, 0),
                         ));
@@ -617,28 +623,42 @@ pub mod runtime {
                     );
                     self.next_line();
                 }
+                NPType(np_reg, id) => {
+                    if let Types::NonPrimitive(id_dyn) = self.registers[np_reg] {
+                        self.registers[GENERAL_REG3] = Types::Bool(id == id_dyn);
+                    } else {
+                        return self.panic_rt(ErrTypes::Expected(
+                            Types::NonPrimitive(0),
+                            self.registers[np_reg],
+                        ));
+                    }
+                }
                 Cast(reg1, ttype) => {
-                    if !Self::cast(&mut self.registers, reg1, ttype) {
-                        return false;
+                    if let Err(err) = Self::cast(&mut self.registers, reg1, ttype) {
+                        return self.panic_rt(err);
                     }
                     self.next_line();
                 }
                 Break(code) => {
                     self.break_code = Some(code);
-                    return false
+                    return false;
                 }
                 Catch => {
-                    self.catches.push(runtime_types::Catch {
+                    if let Err(err) = self.catches.push(runtime_types::Catch {
                         code_ptr: self.code_ptr,
                         id: None,
-                    });
+                    }) {
+                        return self.panic_rt(err);
+                    }
                     self.next_line()
                 }
                 CatchId(id) => {
-                    self.catches.push(runtime_types::Catch {
+                    if let Err(err) = self.catches.push(runtime_types::Catch {
                         code_ptr: self.code_ptr,
                         id: Some(id),
-                    });
+                    }) {
+                        return self.panic_rt(err);
+                    }
                     self.next_line()
                 }
                 DelCatch => {
@@ -646,28 +666,28 @@ pub mod runtime {
                     self.next_line()
                 }
                 Panic => {
-                    let mut i = self.catches.len();
+                    let mut i = self.catches.catches_ptr;
                     loop {
                         if i == 0 {
                             self.exit_code = ExitCodes::Exception;
                             return false;
                         }
                         i -= 1;
-                        if let None = self.catches[i].id {
-                            self.code_ptr = self.catches[i].code_ptr;
-                            break
-                        }else if let Some(n) = self.catches[i].id {
+                        if let None = self.catches.cache[i].id {
+                            self.code_ptr = self.catches.cache[i].code_ptr;
+                            break;
+                        } else if let Some(n) = self.catches.cache[i].id {
                             if let Types::NonPrimitive(e_type) = self.registers[RETURN_REG] {
                                 if n == e_type {
-                                    self.code_ptr = self.catches[i].code_ptr
+                                    self.code_ptr = self.catches.cache[i].code_ptr
                                 }
                             }
-                            break
+                            break;
                         }
                     }
                     self.catches.truncate(i);
                     self.next_line();
-                },
+                }
             }
             return true;
         }
@@ -771,7 +791,7 @@ pub mod runtime {
         fn next_line(&mut self) {
             self.code_ptr += 1;
         }
-        fn cast(registers: &mut Registers, reg1: usize, reg2: usize) -> bool {
+        fn cast(registers: &mut Registers, reg1: usize, reg2: usize) -> Result<bool, ErrTypes> {
             match registers[reg1] {
                 Types::Bool(bol) => match registers[reg2] {
                     Types::Byte(_) => {
@@ -801,7 +821,7 @@ pub mod runtime {
                             Types::Char('0')
                         }
                     }
-                    _ => return panic_rt(ErrTypes::ImplicitCast(registers[reg1], registers[reg2])),
+                    _ => return Err(ErrTypes::ImplicitCast(registers[reg1], registers[reg2])),
                 },
                 Types::Byte(num) => match registers[reg2] {
                     Types::Int(_) => registers[reg1] = Types::Int(num as i32),
@@ -815,7 +835,7 @@ pub mod runtime {
                             Types::Bool(true)
                         }
                     }
-                    _ => return panic_rt(ErrTypes::ImplicitCast(registers[reg1], registers[reg2])),
+                    _ => return Err(ErrTypes::ImplicitCast(registers[reg1], registers[reg2])),
                 },
                 Types::Int(num) => match registers[reg2] {
                     Types::Byte(_) => registers[reg1] = Types::Byte(num as u8),
@@ -828,7 +848,7 @@ pub mod runtime {
                             Types::Bool(true)
                         }
                     }
-                    _ => return panic_rt(ErrTypes::ImplicitCast(registers[reg1], registers[reg2])),
+                    _ => return Err(ErrTypes::ImplicitCast(registers[reg1], registers[reg2])),
                 },
                 Types::Float(num) => match registers[reg2] {
                     Types::Byte(_) => registers[reg1] = Types::Byte(num as u8),
@@ -841,7 +861,7 @@ pub mod runtime {
                             Types::Bool(true)
                         }
                     }
-                    _ => return panic_rt(ErrTypes::ImplicitCast(registers[reg1], registers[reg2])),
+                    _ => return Err(ErrTypes::ImplicitCast(registers[reg1], registers[reg2])),
                 },
                 Types::Usize(num) => match registers[reg2] {
                     Types::Byte(_) => registers[reg1] = Types::Byte(num as u8),
@@ -854,11 +874,11 @@ pub mod runtime {
                             Types::Bool(true)
                         }
                     }
-                    _ => return panic_rt(ErrTypes::ImplicitCast(registers[reg1], registers[reg2])),
+                    _ => return Err(ErrTypes::ImplicitCast(registers[reg1], registers[reg2])),
                 },
-                _ => return panic_rt(ErrTypes::ImplicitCast(registers[reg1], registers[reg2])),
+                _ => return Err(ErrTypes::ImplicitCast(registers[reg1], registers[reg2])),
             }
-            true
+            Ok(true)
         }
         pub fn data_report(&self, runtime: Option<u128>) {
             use enable_ansi_support::enable_ansi_support;
@@ -885,6 +905,12 @@ pub mod runtime {
                 }
             }
         }
+        fn panic_rt(&mut self, kind: ErrTypes) -> bool {
+            self.break_code = Some(self.code_ptr);
+            print_message(&kind);
+            self.exit_code = ExitCodes::Internal(kind);
+            false
+        }
     }
 }
 
@@ -898,6 +924,7 @@ pub mod runtime_error {
         Expected(Types, Types),
         ImplicitCast(Types, Types),
         StackOverflow,
+        CatchOwerflow,
     }
     fn gen_message(header: String, line: Option<(usize, usize)>, err_no: u8) -> String {
         return if let Some(line) = line {
@@ -907,28 +934,32 @@ pub mod runtime_error {
             format!("\x1b[90mErr{err_no:03}\x1b[0m \x1b[91m{header}\x1b[0m\n\x1b[90mLocation unspecified.\x1b[0m")
         };
     }
-    pub fn panic_rt(kind: ErrTypes) -> bool {
-        let data: String = match kind {
-            ErrTypes::CrossTypeOperation(var1, var2, instr) => {
-                format!("Operation '{instr}' failed: Cross-type operation {var1:+}, {var2:+}")
-            }
-            ErrTypes::WrongTypeOperation(var1, instr) => {
-                format!("Operation '{instr}' failed: Wrong-type operation {var1:+}")
-            }
-            ErrTypes::InvalidType(typ, operation) => {
-                format!("Invalid Type: {typ:#} must be of type '{operation:#}'")
-            }
+    pub fn print_message(kind: &ErrTypes) {
+        let data = match &kind {
+            ErrTypes::CrossTypeOperation(var1, var2, instr) => (
+                format!("Operation '{instr}' failed: Cross-type operation {var1:+}, {var2:+}"),
+                0,
+            ),
+            ErrTypes::WrongTypeOperation(var1, instr) => (
+                format!("Operation '{instr}' failed: Wrong-type operation {var1:+}"),
+                1,
+            ),
+            ErrTypes::InvalidType(typ, operation) => (
+                format!("Invalid Type: {typ:#} must be of type '{operation:#}'"),
+                2,
+            ),
             ErrTypes::Expected(exp, found) => {
-                format!("Wrong type: Expected {exp:#}, found {found:#}")
+                (format!("Wrong type: Expected {exp:#}, found {found:#}"), 3)
             }
-            ErrTypes::ImplicitCast(type1, type2) => {
-                format!("Cast error: Can not implicitly cast type {type1:#} into type {type2:#}")
-            }
-            ErrTypes::StackOverflow => format!("Stack overflow"), // TODO: impl this
+            ErrTypes::ImplicitCast(type1, type2) => (
+                format!("Cast error: Can not implicitly cast type {type1:#} into type {type2:#}"),
+                4,
+            ),
+            ErrTypes::StackOverflow => (format!("Stack overflow"), 5), // TODO: impl this
+            ErrTypes::CatchOwerflow => (format!("Catch overflow"), 6),
         };
-        let message = gen_message(data, Some((0, 0)), 0);
+        let message = gen_message(data.0, None, data.1);
         println!("{message}");
-        false
     }
 }
 
@@ -956,12 +987,34 @@ pub mod runtime_types {
         pub non_primitives: Vec<NonPrimitiveType>,
         pub traits: Vec<Trait>,
         pub break_code: Option<usize>,
-        pub catches: Vec<Catch>,
+        pub catches: Catches,
         pub exit_code: ExitCodes,
     }
+    #[derive(Debug, Copy, Clone)]
+    pub struct Catches {
+        pub catches_ptr: usize,
+        pub cache: [Catch; 256],
+    }
+    impl Catches {
+        pub fn push(&mut self, catch: Catch) -> Result<(), ErrTypes> {
+            if self.catches_ptr == 255 {
+                return Err(ErrTypes::CatchOwerflow);
+            }
+            self.catches_ptr += 1;
+            self.cache[self.catches_ptr] = catch;
+            Ok(())
+        }
+        pub fn pop(&mut self) {
+            self.catches_ptr -= 1;
+        }
+        pub fn truncate(&mut self, n: usize) {
+            self.catches_ptr = n;
+        }
+    }
+    #[derive(Debug, Copy, Clone)]
     pub struct Catch {
         pub code_ptr: usize,
-        pub id: Option<usize>
+        pub id: Option<usize>,
     }
     /// indicates why program exited
     #[derive(Debug)]
@@ -973,7 +1026,7 @@ pub mod runtime_types {
         /// an exception was thrown but never caught
         Exception,
         /// unrecoverable error occured (if you believe this is not meant to happen, contact me)
-        Internal(runtime_error::ErrTypes)
+        Internal(runtime_error::ErrTypes),
     }
     /// a structure used to register data on heap
     #[derive(Clone, Debug)]
@@ -994,7 +1047,7 @@ pub mod runtime_types {
         Null,
         /// can be considered a header for non-primitive types
         /// ID
-        NonPrimitive(usize)
+        NonPrimitive(usize),
     }
     #[derive(Clone, Copy, Debug)]
     pub enum NonPrimitiveTypes {
@@ -1006,12 +1059,12 @@ pub mod runtime_types {
         pub name: String,
         pub kind: NonPrimitiveTypes,
         pub len: usize,
-        pub pointers: usize
+        pub pointers: usize,
     }
     pub type Trait = Vec<usize>;
-    use std::fmt;
+    use std::{clone, fmt};
 
-    use super::runtime_error;
+    use super::runtime_error::{self, ErrTypes};
     impl fmt::Display for Types {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             if f.alternate() {
@@ -1025,7 +1078,7 @@ pub mod runtime_types {
                     Types::Null => write!(f, "Null"),
                     Types::Pointer(_, _) => write!(f, "Pointer"),
                     Types::Usize(_) => write!(f, "Usize"),
-                    Types::NonPrimitive(_) => write!(f, "Non-primitive")
+                    Types::NonPrimitive(_) => write!(f, "Non-primitive"),
                 }
             } else if f.sign_plus() {
                 match *self {
@@ -1040,7 +1093,7 @@ pub mod runtime_types {
                     Types::Null => write!(f, "Null"),
                     Types::Pointer(loc, kind) => write!(f, "Pointer<{loc}, {kind}>"),
                     Types::Usize(num) => write!(f, "Usize<{num}>"),
-                    Types::NonPrimitive(id) => write!(f, "Non-primitive<{id}>")
+                    Types::NonPrimitive(id) => write!(f, "Non-primitive<{id}>"),
                 }
             } else {
                 match *self {
@@ -1053,7 +1106,7 @@ pub mod runtime_types {
                     Types::Null => write!(f, "Null"),
                     Types::Pointer(loc, _) => write!(f, "{loc}"),
                     Types::Usize(num) => write!(f, "{num}"),
-                    Types::NonPrimitive(id) => write!(f, "{id}")
+                    Types::NonPrimitive(id) => write!(f, "{id}"),
                 }
             }
         }
@@ -1062,7 +1115,7 @@ pub mod runtime_types {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             match *self {
                 NonPrimitiveTypes::Array => write!(f, "Array"),
-                NonPrimitiveTypes::Struct => write!(f, "Struct")
+                NonPrimitiveTypes::Struct => write!(f, "Struct"),
             }
         }
     }
@@ -1196,6 +1249,8 @@ pub mod runtime_types {
         CatchId(usize),
         /// Delete catch | deletes one chatch instruction from cache
         DelCatch,
+        /// Non-primitive type: np_reg ID | compares reg(np_reg).id asuming it belongs to Non-primitive type with ID
+        NPType(usize, usize),
     }
     impl fmt::Display for Instructions {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -1249,6 +1304,7 @@ pub mod runtime_types {
                 Instructions::Catch => "Catch",
                 Instructions::CatchId(_) => "Catch",
                 Instructions::DelCatch => "DeleteCatch",
+                Instructions::NPType(_, _) => "NonPrimitiveType",
             };
             write!(f, "{str}")
         }
