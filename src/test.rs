@@ -149,7 +149,7 @@ pub mod test {
                     Usize(1), // size allocated on each iteration; low for safety measures
                     Int(0), // index
                     Int(1), // step
-                    Int(60), // range
+                    Int(300), // range
                     Null, // placeholder for heap pointer
                 ];
                 context.code = vec![
@@ -163,7 +163,8 @@ pub mod test {
                     Wr(4, GENERAL_REG1),
                     Rd(2, GENERAL_REG2),
                     Less,
-                    Brnc(1, 11),
+                    Catch,
+                    Brnc(1, 12),
                     Debug(POINTER_REG),
                     Rdc(1, GENERAL_REG2), // size
                     Rdc(1, GENERAL_REG1), // size
