@@ -163,7 +163,7 @@ pub mod test {
                     Wr(4, GENERAL_REG1),
                     Rd(2, GENERAL_REG2),
                     Less,
-                    Catch,
+                    Res(0, 0),
                     Brnc(1, 12),
                     Debug(POINTER_REG),
                     Rdc(1, GENERAL_REG2), // size

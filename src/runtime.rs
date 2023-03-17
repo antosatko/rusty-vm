@@ -36,6 +36,7 @@ pub mod runtime {
                     cache: [Catch {
                         code_ptr: 0,
                         id: None,
+                        cs_ptr: 0
                     }; 256],
                 },
                 exit_code: ExitCodes::End,
@@ -647,6 +648,7 @@ pub mod runtime {
                     if let Err(err) = self.catches.push(runtime_types::Catch {
                         code_ptr: self.code_ptr,
                         id: None,
+                        cs_ptr: self.stack_ptr
                     }) {
                         return self.panic_rt(err);
                     }
@@ -656,6 +658,7 @@ pub mod runtime {
                     if let Err(err) = self.catches.push(runtime_types::Catch {
                         code_ptr: self.code_ptr,
                         id: Some(id),
+                        cs_ptr: self.stack_ptr
                     }) {
                         return self.panic_rt(err);
                     }
@@ -673,17 +676,19 @@ pub mod runtime {
                             return false;
                         }
                         i -= 1;
-                        if let None = self.catches.cache[i].id {
-                            self.code_ptr = self.catches.cache[i].code_ptr;
-                            break;
-                        } else if let Some(n) = self.catches.cache[i].id {
+                        if let Some(n) = self.catches.cache[i].id {
                             if let Types::NonPrimitive(e_type) = self.registers[RETURN_REG] {
                                 if n == e_type {
-                                    self.code_ptr = self.catches.cache[i].code_ptr
+                                    self.code_ptr = self.catches.cache[i].code_ptr;
+                                    self.stack_ptr = self.catches.cache[i].cs_ptr;
                                 }
                             }
                             break;
-                        }
+                        } else {
+                            self.code_ptr = self.catches.cache[i].code_ptr;
+                            self.stack_ptr = self.catches.cache[i].cs_ptr;
+                            break;
+                        } 
                     }
                     self.catches.truncate(i);
                     self.next_line();
@@ -1014,6 +1019,7 @@ pub mod runtime_types {
     #[derive(Debug, Copy, Clone)]
     pub struct Catch {
         pub code_ptr: usize,
+        pub cs_ptr: usize,
         pub id: Option<usize>,
     }
     /// indicates why program exited
