@@ -19,9 +19,9 @@ pub mod runtime {
                 call_stack: [CallStack {
                     end: 0,
                     code_ptr: 0,
-                    reg_freeze: [Types::Null; 3],
+                    reg_freeze: [Types::Null; FREEZED_REG_SIZE],
                     pointers_len: 0,
-                }; 255],
+                }; CALL_STACK_SIZE],
                 registers: [Types::Null; REGISTER_SIZE],
                 code: vec![],
                 code_ptr: 0,
@@ -36,10 +36,11 @@ pub mod runtime {
                     cache: [Catch {
                         code_ptr: 0,
                         id: None,
-                        cs_ptr: 0
-                    }; 256],
+                        cs_ptr: 0,
+                    }; CALL_STACK_SIZE],
                 },
                 exit_code: ExitCodes::End,
+                string_arena: vec![],
             }
         }
         pub fn run(&mut self) -> bool {
@@ -120,6 +121,28 @@ pub mod runtime {
                                     self.registers[POINTER_REG],
                                 ));
                             }
+                            PointerTypes::String => {
+                                if let Types::Pointer(dest, PointerTypes::String) =
+                                    self.registers[value_reg]
+                                {
+                                    self.str_copy_from(u_size, dest)
+                                } else {
+                                    return self.panic_rt(ErrTypes::Expected(
+                                        Types::Pointer(0, PointerTypes::String),
+                                        self.registers[value_reg],
+                                    ));
+                                }
+                            }
+                            PointerTypes::Char(loc) => {
+                                if let Types::Char(chr) = self.registers[value_reg] {
+                                    self.string_arena[u_size][loc] = chr
+                                } else {
+                                    return self.panic_rt(ErrTypes::Expected(
+                                        Types::Char('a'),
+                                        self.registers[value_reg],
+                                    ));
+                                }
+                            }
                         }
                     } else {
                         return self.panic_rt(ErrTypes::Expected(
@@ -143,6 +166,16 @@ pub mod runtime {
                                     self.registers[POINTER_REG],
                                     Types::Pointer(0, PointerTypes::Heap(0)),
                                 ));
+                            }
+                            PointerTypes::String => {
+                                return self.panic_rt(ErrTypes::InvalidType(
+                                    self.registers[POINTER_REG],
+                                    Types::Pointer(0, PointerTypes::Char(0)),
+                                ));
+                            }
+                            PointerTypes::Char(idx) => {
+                                self.registers[cash_reg] =
+                                    Types::Char(self.string_arena[u_size][idx]);
                             }
                         }
                     } else {
@@ -180,6 +213,16 @@ pub mod runtime {
                                         self.code[self.code_ptr],
                                     ));
                                 }
+                                PointerTypes::Char(_) => {
+                                    return self.panic_rt(ErrTypes::WrongTypeOperation(
+                                        self.registers[POINTER_REG],
+                                        self.code[self.code_ptr],
+                                    ));
+                                }
+                                PointerTypes::String => {
+                                    self.registers[POINTER_REG] =
+                                        Types::Pointer(u_size, PointerTypes::Char(index));
+                                }
                             }
                         } else {
                             return self.panic_rt(ErrTypes::WrongTypeOperation(
@@ -211,6 +254,16 @@ pub mod runtime {
                                     self.registers[POINTER_REG],
                                     self.code[self.code_ptr],
                                 ));
+                            }
+                            PointerTypes::Char(_) => {
+                                return self.panic_rt(ErrTypes::WrongTypeOperation(
+                                    self.registers[POINTER_REG],
+                                    self.code[self.code_ptr],
+                                ));
+                            }
+                            PointerTypes::String => {
+                                self.registers[POINTER_REG] =
+                                    Types::Pointer(u_size, PointerTypes::Char(index));
                             }
                         }
                     } else {
@@ -336,7 +389,7 @@ pub mod runtime {
                 Frz => {
                     self.call_stack[self.stack_ptr]
                         .reg_freeze
-                        .copy_from_slice(&self.registers[..3]);
+                        .clone_from_slice(&self.registers[..3]);
                     self.next_line();
                 }
                 Swap(reg1, reg2) => {
@@ -577,18 +630,28 @@ pub mod runtime {
                         for i in 0..len {
                             let value = match kind {
                                 PointerTypes::Object => self.heap[u_size][i],
+                                PointerTypes::String => Types::Char(self.string_arena[u_size][i]),
                                 PointerTypes::Stack => self.stack[u_size + i],
                                 PointerTypes::Heap(idx) => self.heap[u_size][i + idx],
+                                PointerTypes::Char(idx) => {
+                                    Types::Char(self.string_arena[u_size][i + idx])
+                                }
                             };
                             match new_ptr.1 {
                                 PointerTypes::Object => {
                                     self.heap[new_ptr.0][i] = value;
+                                }
+                                PointerTypes::String => {
+                                    self.string_arena[new_ptr.0][i] = value.get_char();
                                 }
                                 PointerTypes::Stack => {
                                     self.stack[new_ptr.0 + i] = value;
                                 }
                                 PointerTypes::Heap(idx) => {
                                     self.heap[new_ptr.0][idx + i] = value;
+                                }
+                                PointerTypes::Char(idx) => {
+                                    self.string_arena[new_ptr.0][idx + i] = value.get_char();
                                 }
                             }
                         }
@@ -612,6 +675,12 @@ pub mod runtime {
                                 }
                                 PointerTypes::Heap(idx) => {
                                     self.heap[u_size][i + idx] = value;
+                                }
+                                PointerTypes::Char(idx) => {
+                                    self.string_arena[u_size][i + idx] = value.get_char();
+                                }
+                                PointerTypes::String => {
+                                    self.string_arena[u_size][i] = value.get_char();
                                 }
                             }
                         }
@@ -648,7 +717,7 @@ pub mod runtime {
                     if let Err(err) = self.catches.push(runtime_types::Catch {
                         code_ptr: self.code_ptr,
                         id: None,
-                        cs_ptr: self.stack_ptr
+                        cs_ptr: self.stack_ptr,
                     }) {
                         return self.panic_rt(err);
                     }
@@ -658,7 +727,7 @@ pub mod runtime {
                     if let Err(err) = self.catches.push(runtime_types::Catch {
                         code_ptr: self.code_ptr,
                         id: Some(id),
-                        cs_ptr: self.stack_ptr
+                        cs_ptr: self.stack_ptr,
                     }) {
                         return self.panic_rt(err);
                     }
@@ -688,7 +757,7 @@ pub mod runtime {
                             self.code_ptr = self.catches.cache[i].code_ptr;
                             self.stack_ptr = self.catches.cache[i].cs_ptr;
                             break;
-                        } 
+                        }
                     }
                     self.catches.truncate(i);
                     self.next_line();
@@ -885,6 +954,21 @@ pub mod runtime {
             }
             Ok(true)
         }
+        pub fn str_new(&mut self) -> usize {
+            self.string_arena.push(vec![]);
+            self.string_arena.len() - 1
+        }
+        pub fn str_from(&mut self, str: Vec<char>) -> usize {
+            self.string_arena.push(str);
+            self.string_arena.len() - 1
+        }
+        pub fn str_copy(&mut self, loc: usize) -> usize {
+            self.string_arena.push(self.string_arena[loc].clone());
+            self.string_arena.len() - 1
+        }
+        pub fn str_copy_from(&mut self, orig: usize, dest: usize) {
+            self.string_arena[dest] = self.string_arena[orig].clone()
+        }
         pub fn data_report(&self, runtime: Option<u128>) {
             use enable_ansi_support::enable_ansi_support;
             match enable_ansi_support() {
@@ -970,6 +1054,7 @@ pub mod runtime_error {
 
 #[allow(unused)]
 pub mod runtime_types {
+    pub const CALL_STACK_SIZE: usize = 256;
     pub const FREEZED_REG_SIZE: usize = 3;
     pub type Registers = [Types; REGISTER_SIZE];
     pub const REGISTER_SIZE: usize = 6;
@@ -982,13 +1067,14 @@ pub mod runtime_types {
     /// context for a single thread of execution (may include multiple threads in future updates)
     pub struct Context {
         pub stack: Vec<Types>,
-        pub call_stack: [CallStack; 255],
+        pub call_stack: [CallStack; CALL_STACK_SIZE],
         pub stack_ptr: usize,
         pub registers: Registers,
         pub code: Vec<Instructions>,
         pub code_ptr: usize,
         pub garbage: Vec<usize>,
         pub heap: Vec<Vec<Types>>,
+        pub string_arena: Vec<Vec<char>>,
         pub non_primitives: Vec<NonPrimitiveType>,
         pub traits: Vec<Trait>,
         pub break_code: Option<usize>,
@@ -998,11 +1084,11 @@ pub mod runtime_types {
     #[derive(Debug, Copy, Clone)]
     pub struct Catches {
         pub catches_ptr: usize,
-        pub cache: [Catch; 256],
+        pub cache: [Catch; CALL_STACK_SIZE],
     }
     impl Catches {
         pub fn push(&mut self, catch: Catch) -> Result<(), ErrTypes> {
-            if self.catches_ptr == 255 {
+            if self.catches_ptr == CALL_STACK_SIZE {
                 return Err(ErrTypes::CatchOwerflow);
             }
             self.catches_ptr += 1;
@@ -1051,9 +1137,20 @@ pub mod runtime_types {
         Pointer(usize, PointerTypes),
         CodePointer(usize),
         Null,
-        /// can be considered a header for non-primitive types
+        /// header for non-primitive types
         /// ID
         NonPrimitive(usize),
+        // is a pointer to string arena
+        //String(usize),
+    }
+    impl Types {
+        /// may panic, so use this only if you are 100% certain that you got a character
+        pub fn get_char(&self) -> char {
+            if let Types::Char(chr) = self {
+                return *chr;
+            }
+            panic!()
+        }
     }
     #[derive(Clone, Copy, Debug)]
     pub enum NonPrimitiveTypes {
@@ -1068,7 +1165,7 @@ pub mod runtime_types {
         pub pointers: usize,
     }
     pub type Trait = Vec<usize>;
-    use std::{clone, fmt};
+    use std::{clone, fmt, rc::Rc, sync::Arc};
 
     use super::runtime_error::{self, ErrTypes};
     impl fmt::Display for Types {
@@ -1140,8 +1237,18 @@ pub mod runtime_types {
         Object,
         /// location on heap
         ///
-        /// may expire at any time
+        /// may expire any time
         Heap(usize),
+        /// String
+        ///
+        /// location in string arena
+        /// never expires
+        String,
+        /// char
+        ///
+        /// location and index in string arena
+        /// may expire any time
+        Char(usize),
     }
     impl fmt::Display for PointerTypes {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -1149,6 +1256,8 @@ pub mod runtime_types {
                 PointerTypes::Heap(n) => write!(f, "Heap({n})"),
                 PointerTypes::Object => write!(f, "Object"),
                 PointerTypes::Stack => write!(f, "Stack"),
+                PointerTypes::String => write!(f, "String"),
+                PointerTypes::Char(n) => write!(f, "Stack({n})"),
             }
         }
     }
