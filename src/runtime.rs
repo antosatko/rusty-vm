@@ -303,6 +303,16 @@ pub mod runtime {
                                     ));
                                 }
                             }
+                            PointerTypes::String => {
+                                if let Types::Usize(new_size) = self.registers[size_reg] {
+                                    self.string_arena[u_size].resize(new_size, 0 as char);
+                                } else {
+                                    return self.panic_rt(ErrTypes::WrongTypeOperation(
+                                        self.registers[size_reg],
+                                        self.code[self.code_ptr],
+                                    ));
+                                }
+                            }
                             _ => {
                                 return self.panic_rt(ErrTypes::WrongTypeOperation(
                                     self.registers[POINTER_REG],
@@ -737,6 +747,42 @@ pub mod runtime {
                     self.catches.pop();
                     self.next_line()
                 }
+                StrCpy(reg) => {
+                    if let Types::Pointer(u_size, PointerTypes::String) = self.registers[reg] {
+                        self.registers[POINTER_REG] =
+                            Types::Pointer(self.str_copy(u_size), PointerTypes::String);
+                    } else {
+                        return self.panic_rt(ErrTypes::Expected(
+                            Types::Pointer(0, PointerTypes::String),
+                            self.registers[reg],
+                        ));
+                    }
+                    self.next_line();
+                }
+                StrNew => {
+                    self.registers[POINTER_REG] =
+                        Types::Pointer(self.str_new(), PointerTypes::String);
+                    self.next_line();
+                }
+                StrCat(reg) => {
+                    if let Types::Pointer(left, PointerTypes::String) = self.registers[POINTER_REG]
+                    {
+                        if let Types::Pointer(right, PointerTypes::String) = self.registers[reg] {
+                            self.registers[POINTER_REG] =
+                                Types::Pointer(self.str_concat(left, right), PointerTypes::String);
+                        } else {
+                            return self.panic_rt(ErrTypes::Expected(
+                                Types::Pointer(0, PointerTypes::String),
+                                self.registers[reg],
+                            ));
+                        }
+                    } else {
+                        return self.panic_rt(ErrTypes::Expected(
+                            Types::Pointer(0, PointerTypes::String),
+                            self.registers[reg],
+                        ));
+                    }
+                }
                 Panic => {
                     let mut i = self.catches.catches_ptr;
                     loop {
@@ -954,20 +1000,30 @@ pub mod runtime {
             }
             Ok(true)
         }
+        /// Creates a new empty string and returns the location of the string.
         pub fn str_new(&mut self) -> usize {
             self.string_arena.push(vec![]);
             self.string_arena.len() - 1
         }
+        /// Creates a new string from a vector of characters and returns the location of the string.
         pub fn str_from(&mut self, str: Vec<char>) -> usize {
             self.string_arena.push(str);
             self.string_arena.len() - 1
         }
+        /// Copies a string from one location to a new location and returns the new location.
         pub fn str_copy(&mut self, loc: usize) -> usize {
             self.string_arena.push(self.string_arena[loc].clone());
             self.string_arena.len() - 1
         }
+        /// Copies a string from one location to another location.
         pub fn str_copy_from(&mut self, orig: usize, dest: usize) {
             self.string_arena[dest] = self.string_arena[orig].clone()
+        }
+        pub fn str_concat(&mut self, left: usize, right: usize) -> usize {
+            let mut temp = self.string_arena[left].clone();
+            temp.extend(self.string_arena[right].iter());
+            self.string_arena.push(temp);
+            self.string_arena.len() - 1
         }
         pub fn data_report(&self, runtime: Option<u128>) {
             use enable_ansi_support::enable_ansi_support;
@@ -1065,6 +1121,7 @@ pub mod runtime_types {
     pub const RETURN_REG: usize = 4;
     pub const CODE_PTR_REG: usize = 5;
     /// context for a single thread of execution (may include multiple threads in future updates)
+    /// this is the main struct that holds all the data for the runtime
     pub struct Context {
         pub stack: Vec<Types>,
         pub call_stack: [CallStack; CALL_STACK_SIZE],
@@ -1087,6 +1144,7 @@ pub mod runtime_types {
         pub cache: [Catch; CALL_STACK_SIZE],
     }
     impl Catches {
+        /// pushes a new catch to the stack
         pub fn push(&mut self, catch: Catch) -> Result<(), ErrTypes> {
             if self.catches_ptr == CALL_STACK_SIZE {
                 return Err(ErrTypes::CatchOwerflow);
@@ -1095,9 +1153,11 @@ pub mod runtime_types {
             self.cache[self.catches_ptr] = catch;
             Ok(())
         }
+        /// pops the last catch from the stack
         pub fn pop(&mut self) {
             self.catches_ptr -= 1;
         }
+        /// truncates the stack to a given size
         pub fn truncate(&mut self, n: usize) {
             self.catches_ptr = n;
         }
@@ -1366,6 +1426,12 @@ pub mod runtime_types {
         DelCatch,
         /// Non-primitive type: np_reg ID | compares reg(np_reg).id asuming it belongs to Non-primitive type with ID
         NPType(usize, usize),
+        /// String new | creates new string and stores pointer in reg(POINTER_REGISTER)
+        StrNew,
+        /// String copy: str_reg | copies string from reg(str_reg) to new string and stores pointer in reg(POINTER_REGISTER)
+        StrCpy(usize),
+        /// String concat: val_reg | creates new string {reg(POINTER_REGISTER) + reg(value_reg)} and stores pointer in reg(POINTER_REG)
+        StrCat(usize),
     }
     impl fmt::Display for Instructions {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -1420,6 +1486,9 @@ pub mod runtime_types {
                 Instructions::CatchId(_) => "Catch",
                 Instructions::DelCatch => "DeleteCatch",
                 Instructions::NPType(_, _) => "NonPrimitiveType",
+                Instructions::StrNew => "StringNew",
+                Instructions::StrCpy(_) => "StringCopy",
+                Instructions::StrCat(_) => "StringConcat",
             };
             write!(f, "{str}")
         }
