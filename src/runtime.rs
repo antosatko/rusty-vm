@@ -605,27 +605,16 @@ pub mod runtime {
                     println!("{:+}", self.registers[reg]);
                     self.next_line();
                 }
-                Len(_) => {
-                    /*
-                    if let Types::Pointer(u_size, kind) = self.registers[POINTER_REG] {
-                        if let PointerTypes::HeapReg = kind {
-                            if let Some(registry) = self.heap_reg_idx(u_size) {
-                                self.registers[POINTER_REG] =
-                                    Types::Usize(self.heap[registry].data.len())
-                            } else {
-                                return self.panic_rt(ErrTypes::PointerInBrokenState);
-                            }
-                        } else {
-                            return self.panic_rt(ErrTypes::NotObject(self.registers[POINTER_REG]));
-                        }
+                Len(reg) => {
+                    if let Types::NonPrimitive(kind) = self.registers[reg] {
+                        self.registers[reg] = Types::Usize(self.non_primitives[kind].len)
                     } else {
-                        return self.panic_rt(ErrTypes::WrongTypeOperation(
-                            self.registers[POINTER_REG],
-                            self.code[self.code_ptr],
+                        return self.panic_rt(ErrTypes::InvalidType(
+                            self.registers[reg],
+                            Types::NonPrimitive(0),
                         ));
                     }
-                    self.next_line();*/
-                    todo!();
+                    self.next_line()
                 }
                 CpRng(original, new, len) => {
                     let new_ptr = if let Types::Pointer(u_size, kind) = self.registers[new] {
@@ -782,6 +771,26 @@ pub mod runtime {
                             self.registers[reg],
                         ));
                     }
+                }
+                StdOut(reg) => {
+                    match self.registers[reg] {
+                        Types::Pointer(u_size, kind) => match kind {
+                            PointerTypes::String => {
+                                let mut temp = String::new();
+                                for chr in &self.string_arena[u_size] {
+                                    temp.push(*chr);
+                                }
+                                print!("{temp}");
+                            }
+                            _ => {
+                                panic!()
+                            }
+                        },
+                        _ => {
+                            panic!()
+                        }
+                    }
+                    self.next_line()
                 }
                 Panic => {
                     let mut i = self.catches.catches_ptr;
@@ -1037,6 +1046,7 @@ pub mod runtime {
                     println!("{} {:?}", "Heap:".magenta(), self.heap);
                     println!("{} {:?}", "Stack:".magenta(), self.stack);
                     println!("{} {:?}", "Registers:".magenta(), self.registers);
+                    println!("{} {:?}", "Strings:".magenta(), self.string_arena);
                 }
                 Err(_) => {
                     print!("\n");
@@ -1047,6 +1057,7 @@ pub mod runtime {
                     println!("{} {:?}", "Heap:", self.heap);
                     println!("{} {:?}", "Stack:", self.stack);
                     println!("{} {:?}", "Registers:", self.registers);
+                    println!("{} {:?}", "Strings:", self.string_arena);
                 }
             }
         }
@@ -1209,7 +1220,7 @@ pub mod runtime_types {
             if let Types::Char(chr) = self {
                 return *chr;
             }
-            panic!()
+            unreachable!()
         }
     }
     #[derive(Clone, Copy, Debug)]
@@ -1422,9 +1433,9 @@ pub mod runtime_types {
         Catch,
         /// Catch ID: id | same as normal catch but responds only to exception with same id
         CatchId(usize),
-        /// Delete catch | deletes one chatch instruction from cache
+        /// Delete catch | deletes one catch instruction from cache
         DelCatch,
-        /// Non-primitive type: np_reg ID | compares reg(np_reg).id asuming it belongs to Non-primitive type with ID
+        /// Non-primitive type: np_reg ID | compares reg(np_reg).id assuming it belongs to Non-primitive type with ID
         NPType(usize, usize),
         /// String new | creates new string and stores pointer in reg(POINTER_REGISTER)
         StrNew,
@@ -1432,6 +1443,8 @@ pub mod runtime_types {
         StrCpy(usize),
         /// String concat: val_reg | creates new string {reg(POINTER_REGISTER) + reg(value_reg)} and stores pointer in reg(POINTER_REG)
         StrCat(usize),
+        /// Standard out: val_reg | outputs value on reg(value_reg) to stdout
+        StdOut(usize),
     }
     impl fmt::Display for Instructions {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -1489,6 +1502,7 @@ pub mod runtime_types {
                 Instructions::StrNew => "StringNew",
                 Instructions::StrCpy(_) => "StringCopy",
                 Instructions::StrCat(_) => "StringConcat",
+                Instructions::StdOut(_) => "StandardOutput",
             };
             write!(f, "{str}")
         }

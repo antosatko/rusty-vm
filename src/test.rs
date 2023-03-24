@@ -2,7 +2,7 @@
 pub mod test {
     use crate::runtime::runtime_types::{Context, Instructions::*, Types::*, *};
 
-    const ID: usize = 4;
+    const ID: usize = 7;
     pub fn test_init(id: Option<usize>, context: &mut Context) -> bool {
         let test_id = if let Some(num) = id { num } else { ID };
         println!("Running test {test_id}");
@@ -231,6 +231,20 @@ pub mod test {
                     Idx(GENERAL_REG1),
                     Rd(1, GENERAL_REG1),
                     Wrp(GENERAL_REG1),
+                    End,
+                ];
+                true
+            }
+            7 => {
+                context.string_arena = vec![
+                    "Hello world".chars().collect(),
+                ];
+                context.stack = vec![
+                    Types::Pointer(0, PointerTypes::String)
+                ];
+                context.code = vec![
+                    Rdc(0, GENERAL_REG1),
+                    StdOut(GENERAL_REG1),
                     End,
                 ];
                 true
