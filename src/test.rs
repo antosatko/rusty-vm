@@ -237,14 +237,28 @@ pub mod test {
             }
             7 => {
                 context.string_arena = vec![
-                    "Hello world".chars().collect(),
+                    "Hello world\n".chars().collect(),
+                    "Length of h.w. string is: ".chars().collect(),
+                    "gzjkh".chars().collect(),
+                    "GC goes brrrrrrrrr".chars().collect(),
                 ];
                 context.stack = vec![
-                    Types::Pointer(0, PointerTypes::String)
+                    Types::Pointer(0, PointerTypes::String),
+                    Types::Pointer(1, PointerTypes::String),
+                    Types::Pointer(2, PointerTypes::String),
                 ];
                 context.code = vec![
                     Rdc(0, GENERAL_REG1),
                     StdOut(GENERAL_REG1),
+                    Rdc(1, GENERAL_REG1),
+                    StdOut(GENERAL_REG1),
+                    Rdc(0, GENERAL_REG1),
+                    Move(GENERAL_REG1, POINTER_REG),
+                    Len(GENERAL_REG1),
+                    Debug(GENERAL_REG1),
+                    Rdc(2, POINTER_REG),
+                    Dalc,
+                    SweepUnoptimized,
                     End,
                 ];
                 true

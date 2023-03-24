@@ -1,6 +1,7 @@
 pub mod runtime {
     use std::ops::Add;
     use std::ops::Div;
+    use std::ops::Index;
     use std::ops::Mul;
     use std::ops::Sub;
     use std::vec;
@@ -26,7 +27,10 @@ pub mod runtime {
                 code: vec![],
                 code_ptr: 0,
                 heap: vec![],
-                garbage: vec![],
+                garbage: Garbage {
+                    heap: vec![],
+                    string_arena: vec![],
+                },
                 stack_ptr: 0,
                 non_primitives: vec![],
                 traits: vec![],
@@ -170,7 +174,7 @@ pub mod runtime {
                             PointerTypes::String => {
                                 return self.panic_rt(ErrTypes::InvalidType(
                                     self.registers[POINTER_REG],
-                                    Types::Pointer(0, PointerTypes::Char(0)),
+                                    Types::Pointer(0, PointerTypes::Heap(0)),
                                 ));
                             }
                             PointerTypes::Char(idx) => {
@@ -312,6 +316,30 @@ pub mod runtime {
                                         self.code[self.code_ptr],
                                     ));
                                 }
+                            }
+                            _ => {
+                                return self.panic_rt(ErrTypes::WrongTypeOperation(
+                                    self.registers[POINTER_REG],
+                                    self.code[self.code_ptr],
+                                ))
+                            }
+                        }
+                    } else {
+                        return self.panic_rt(ErrTypes::WrongTypeOperation(
+                            self.registers[POINTER_REG],
+                            self.code[self.code_ptr],
+                        ));
+                    }
+                    self.next_line();
+                }
+                Dalc => {
+                    if let Types::Pointer(u_size, ptr_type) = self.registers[POINTER_REG] {
+                        match ptr_type {
+                            PointerTypes::Object => {
+                                self.deallocate_obj(u_size);
+                            }
+                            PointerTypes::String => {
+                                self.deallocate_string(u_size);
                             }
                             _ => {
                                 return self.panic_rt(ErrTypes::WrongTypeOperation(
@@ -608,6 +636,21 @@ pub mod runtime {
                 Len(reg) => {
                     if let Types::NonPrimitive(kind) = self.registers[reg] {
                         self.registers[reg] = Types::Usize(self.non_primitives[kind].len)
+                    } else if let Types::Pointer(u_size, kind) = self.registers[reg] {
+                        match kind {
+                            PointerTypes::Object => {
+                                self.registers[reg] = Types::Usize(self.heap[u_size].len())
+                            }
+                            PointerTypes::String => {
+                                self.registers[reg] = Types::Usize(self.string_arena[u_size].len())
+                            }
+                            _ => {
+                                return self.panic_rt(ErrTypes::WrongTypeOperation(
+                                    self.registers[reg],
+                                    self.code[self.code_ptr],
+                                ));
+                            }
+                        }
                     } else {
                         return self.panic_rt(ErrTypes::InvalidType(
                             self.registers[reg],
@@ -824,12 +867,82 @@ pub mod runtime {
         fn allocate_obj(&mut self, size: usize) -> usize {
             let mut data = Vec::new();
             data.resize(size, Types::Null);
-            if let Some(idx) = self.garbage.pop() {
+            if let Some(idx) = self.garbage.heap.pop() {
                 self.heap[idx] = data;
                 return idx;
             }
             self.heap.push(data);
             self.heap.len() - 1
+        }
+        fn deallocate_obj(&mut self, idx: usize) -> bool {
+            if idx >= self.heap.len() {
+                return false;
+            }
+            if idx == self.heap.len() - 1 {
+                self.heap.pop();
+                // get largest index of non garbage obj using last obj and truncate
+                let last = self.last_obj();
+                self.heap.truncate(last);
+                return true;
+            }
+            self.garbage.heap.push(idx);
+            self.heap[idx].clear();
+            true
+        }
+        fn last_string(&mut self) -> usize {
+            if self.string_arena.is_empty() {
+                return 0;
+            }
+            // find first string that is in garbage and is empty and all strings after it are empty and in garbage and then remove it from garbage
+            let mut i = self.string_arena.len() - 1;
+            loop {
+                if i == 0 {
+                    return 0;
+                }
+                if self.string_arena[i].is_empty() {
+                    if let Some(idx) = self.garbage.string_arena.iter().position(|&x| x == i) {
+                        i -= 1;
+                        self.garbage.string_arena.remove(idx);
+                    }
+                } else {
+                    return i + 1;
+                }
+            }
+        }
+        fn last_obj(&mut self) -> usize {
+            if self.heap.is_empty() {
+                return 0;
+            }
+            // find first obj that is in garbage and is empty and all objs after it are empty and in garbage and then remove it from garbage
+            let mut i = self.heap.len() - 1;
+            loop {
+                if i == 0 {
+                    return 0;
+                }
+                if self.heap[i].is_empty() && self.garbage.heap.contains(&i) {
+                    if let Some(idx) = self.garbage.heap.iter().position(|&x| x == i) {
+                        i -= 1;
+                        self.garbage.heap.remove(idx);
+                    }
+                } else {
+                    return i + 1;
+                }
+            }
+        }
+        fn deallocate_string(&mut self, idx: usize) -> bool {
+            if idx >= self.string_arena.len() {
+                return false;
+            }
+            if idx == self.string_arena.len() - 1 {
+                self.string_arena.pop();
+                // get largest index of non garbage string and truncate
+                let last = self.last_string();
+                self.string_arena.truncate(last);
+                return true;
+            }
+            self.garbage.string_arena.push(idx);
+            self.string_arena[idx].clear();
+            true
         }
         fn resize_obj(&mut self, heap_idx: usize, new_size: usize) {
             self.heap[heap_idx].resize(new_size, Types::Null)
@@ -843,7 +956,15 @@ pub mod runtime {
             let marked = self.mark_unoptimized();
             self.sweep_marked(marked);
         }
-        fn sweep_marked(&mut self, marked: Vec<bool>) {
+        fn sweep_marked(&mut self, marked: (Vec<bool>, Vec<bool>)) {
+            self.sweep_marked_obj(marked.0);
+            self.sweep_marked_string(marked.1);
+            let last = self.last_string();
+            self.string_arena.truncate(last);
+            let last = self.last_obj();
+            self.heap.truncate(last);
+        }
+        fn sweep_marked_obj(&mut self, marked: Vec<bool>) {
             if let Some(idx) = marked.iter().rposition(|x| !*x) {
                 self.heap.truncate(idx + 1);
             } else {
@@ -856,31 +977,58 @@ pub mod runtime {
                 }
                 if *mark {
                     self.heap[i].clear();
-                    if !self.garbage.contains(&i) {
-                        self.garbage.push(i);
+                    if !self.garbage.heap.contains(&i) {
+                        self.garbage.heap.push(i);
                     }
                 }
             }
         }
-        fn mark_unoptimized(&mut self) -> Vec<bool> {
-            let mut marked = Vec::new();
-            marked.resize(self.heap.len(), true);
-            self.mark_registers(&mut marked);
-            self.mark_range((0, self.stack.len()), &mut marked);
-            marked
+        fn sweep_marked_string(&mut self, marked: Vec<bool>) {
+            if let Some(idx) = marked.iter().rposition(|x| !*x) {
+                self.string_arena.truncate(idx + 1);
+            } else {
+                self.string_arena.clear();
+                return;
+            }
+            for (i, mark) in marked.iter().enumerate() {
+                if i == self.string_arena.len() {
+                    return;
+                }
+                if *mark {
+                    self.string_arena[i].clear();
+                    if !self.garbage.string_arena.contains(&i) {
+                        self.garbage.string_arena.push(i);
+                    }
+                }
+            }
         }
-        fn mark(&mut self) -> Vec<bool> {
+        fn mark_unoptimized(&mut self) -> (Vec<bool>, Vec<bool>) {
+            let mut marked_obj = Vec::new();
+            let mut marked_str = Vec::new();
+            marked_obj.resize(self.heap.len(), true);
+            marked_str.resize(self.string_arena.len(), true);
+            self.mark_registers(&mut marked_obj, &mut marked_str);
+            self.mark_range((0, self.stack.len()), &mut marked_obj, &mut marked_str);
+            (marked_obj, marked_str)
+        }
+        fn mark(&mut self) -> (Vec<bool>, Vec<bool>) {
             let mut call_stack_idx = 1;
             let mut marked = Vec::new();
+            let mut marked_str = Vec::new();
             marked.resize(self.heap.len(), true);
-            self.mark_registers(&mut marked);
+            marked_str.resize(self.string_arena.len(), true);
+            self.mark_registers(&mut marked, &mut marked_str);
             while call_stack_idx <= self.stack_ptr {
                 let cs = self.call_stack[call_stack_idx];
                 let prev_cs = self.call_stack[call_stack_idx - 1];
-                self.mark_range((prev_cs.end, prev_cs.end + cs.pointers_len), &mut marked);
+                self.mark_range(
+                    (prev_cs.end, prev_cs.end + cs.pointers_len),
+                    &mut marked,
+                    &mut marked_str,
+                );
                 call_stack_idx += 1;
             }
-            marked
+            (marked, marked_str)
         }
         fn mark_obj(&mut self, obj_idx: usize, marked: &mut Vec<bool>) {
             if !marked[obj_idx] {
@@ -896,21 +1044,33 @@ pub mod runtime {
                 }
             }
         }
-        fn mark_range(&mut self, range: (usize, usize), marked: &mut Vec<bool>) {
+        fn mark_string(&mut self, str_idx: usize, marked: &mut Vec<bool>) {
+            marked[str_idx] = false;
+        }
+        fn mark_range(
+            &mut self,
+            range: (usize, usize),
+            marked_obj: &mut Vec<bool>,
+            marked_string: &mut Vec<bool>,
+        ) {
             for idx in range.0..range.1 {
                 if let Types::Pointer(u_size, PointerTypes::Heap(_)) = self.stack[idx] {
-                    self.mark_obj(u_size, marked);
+                    self.mark_obj(u_size, marked_obj);
                 } else if let Types::Pointer(u_size, PointerTypes::Object) = self.stack[idx] {
-                    self.mark_obj(u_size, marked);
+                    self.mark_obj(u_size, marked_obj);
+                } else if let Types::Pointer(u_size, PointerTypes::String) = self.stack[idx] {
+                    self.mark_string(u_size, marked_string);
                 }
             }
         }
-        fn mark_registers(&mut self, marked: &mut Vec<bool>) {
+        fn mark_registers(&mut self, marked: &mut Vec<bool>, marked_str: &mut Vec<bool>) {
             for reg in self.registers {
                 if let Types::Pointer(u_size, PointerTypes::Heap(_)) = reg {
                     self.mark_obj(u_size, marked);
                 } else if let Types::Pointer(u_size, PointerTypes::Object) = reg {
                     self.mark_obj(u_size, marked);
+                } else if let Types::Pointer(u_size, PointerTypes::String) = reg {
+                    self.mark_string(u_size, marked_str);
                 }
             }
         }
@@ -1047,6 +1207,7 @@ pub mod runtime {
                     println!("{} {:?}", "Stack:".magenta(), self.stack);
                     println!("{} {:?}", "Registers:".magenta(), self.registers);
                     println!("{} {:?}", "Strings:".magenta(), self.string_arena);
+                    println!("{} {:?}", "Garbage:".magenta(), self.garbage);
                 }
                 Err(_) => {
                     print!("\n");
@@ -1140,7 +1301,7 @@ pub mod runtime_types {
         pub registers: Registers,
         pub code: Vec<Instructions>,
         pub code_ptr: usize,
-        pub garbage: Vec<usize>,
+        pub garbage: Garbage,
         pub heap: Vec<Vec<Types>>,
         pub string_arena: Vec<Vec<char>>,
         pub non_primitives: Vec<NonPrimitiveType>,
@@ -1148,6 +1309,11 @@ pub mod runtime_types {
         pub break_code: Option<usize>,
         pub catches: Catches,
         pub exit_code: ExitCodes,
+    }
+    #[derive(Debug, Clone)]
+    pub struct Garbage {
+        pub heap: Vec<usize>,
+        pub string_arena: Vec<usize>,
     }
     #[derive(Debug, Copy, Clone)]
     pub struct Catches {
@@ -1356,6 +1522,8 @@ pub mod runtime_types {
         Alc(usize),
         /// Reallocate: size_reg | resizes heap(<reg>) for <size>; additional space is filled with null
         RAlc(usize),
+        /// Free: | frees heap(<reg>)
+        Dalc,
         /// Goto: pos | moves code_pointer to <pos>
         Goto(usize),
         /// GotoCodePtr: pos_reg | moves code pointer to reg(<reg>)
@@ -1399,7 +1567,7 @@ pub mod runtime_types {
         //TODO: add to compiler
         /// Cast: reg1 reg2 | casts value of reg1 to the type of reg2 and stores in reg1
         Cast(usize, usize),
-        /// Length: reg | sets reg to Usize(size of heap object)
+        /// Length: reg | sets reg to Usize(size of an object)
         Len(usize),
         /// Type: val type | sets reg(type) to bool(typeof(val) == typeof(type))
         Type(usize, usize),
@@ -1503,6 +1671,7 @@ pub mod runtime_types {
                 Instructions::StrCpy(_) => "StringCopy",
                 Instructions::StrCat(_) => "StringConcat",
                 Instructions::StdOut(_) => "StandardOutput",
+                Instructions::Dalc => "Deallocate",
             };
             write!(f, "{str}")
         }
