@@ -1169,20 +1169,38 @@ pub mod runtime {
             }
             Ok(true)
         }
-        /// Creates a new empty string and returns the location of the string.
+        /// Creates a new empty string and returns the location of the string
         pub fn str_new(&mut self) -> usize {
-            self.string_arena.push(vec![]);
-            self.string_arena.len() - 1
+            // either push a new string or occupy a deleted string
+            if let Some(loc) = self.garbage.string_arena.pop() {
+                self.string_arena[loc] = Vec::new();
+                loc
+            } else {
+                self.string_arena.push(Vec::new());
+                self.string_arena.len() - 1
+            }
         }
-        /// Creates a new string from a vector of characters and returns the location of the string.
+        ///  Creates a new copied string and returns the location of the string
         pub fn str_from(&mut self, str: Vec<char>) -> usize {
-            self.string_arena.push(str);
-            self.string_arena.len() - 1
+            // either push a new string or occupy a deleted string
+            if let Some(loc) = self.garbage.string_arena.pop() {
+                self.string_arena[loc] = str;
+                loc
+            } else {
+                self.string_arena.push(str);
+                self.string_arena.len() - 1
+            }
         }
-        /// Copies a string from one location to a new location and returns the new location.
+        /// Copies a string from one location to a new location and returns the new location
         pub fn str_copy(&mut self, loc: usize) -> usize {
-            self.string_arena.push(self.string_arena[loc].clone());
-            self.string_arena.len() - 1
+            // either push a new string or occupy a deleted string
+            if let Some(new_loc) = self.garbage.string_arena.pop() {
+                self.string_arena[new_loc] = self.string_arena[loc].clone();
+                new_loc
+            } else {
+                self.string_arena.push(self.string_arena[loc].clone());
+                self.string_arena.len() - 1
+            }
         }
         /// Copies a string from one location to another location.
         pub fn str_copy_from(&mut self, orig: usize, dest: usize) {
