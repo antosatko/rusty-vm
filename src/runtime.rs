@@ -1,7 +1,6 @@
 pub mod runtime {
     use std::ops::Add;
     use std::ops::Div;
-    use std::ops::Index;
     use std::ops::Mul;
     use std::ops::Sub;
     use std::vec;
@@ -33,7 +32,6 @@ pub mod runtime {
                 },
                 stack_ptr: 0,
                 non_primitives: vec![],
-                traits: vec![],
                 break_code: None,
                 catches: Catches {
                     catches_ptr: 0,
@@ -106,6 +104,7 @@ pub mod runtime {
                     self.next_line();
                 }
                 Rd(stack_offset, reg) => {
+                    // print stack offset and end
                     let end = self.stack_end();
                     self.registers[reg] = self.stack[end - stack_offset];
                     self.next_line();
@@ -276,6 +275,7 @@ pub mod runtime {
                             self.code[self.code_ptr],
                         ));
                     }
+                    self.next_line();
                 }
                 Alc(size_reg) => {
                     if let Types::Usize(size) = self.registers[size_reg] {
@@ -622,9 +622,22 @@ pub mod runtime {
                     self.next_line();
                 }
                 Cal(_procedure, _args) => {}
-                Mtd(trt, method) => {
-                    self.call_stack[self.stack_ptr].code_ptr = self.code_ptr;
-                    self.code_ptr = self.traits[trt][method];
+                Mtd(obj, trt, method) => {
+                    if let Types::NonPrimitive(id) = self.registers[obj] {
+                        if let Some(method) = self.non_primitives[id].methods[trt].get(method) {
+                            self.call_stack[self.stack_ptr].code_ptr = self.code_ptr;
+                            self.code_ptr = *method;
+                        } else {
+                            return self.panic_rt(ErrTypes::MethodNotFound);
+                        }
+                    } else {
+                        return self.panic_rt(ErrTypes::WrongTypeOperation(
+                            self.registers[obj],
+                            self.code[self.code_ptr],
+                        ));
+                    }
+                    /*self.call_stack[self.stack_ptr].code_ptr = self.code_ptr;
+                    self.code_ptr = self.non_primitives[obj].methods[trt][method];*/
                 }
                 End => {
                     return false;
@@ -816,6 +829,51 @@ pub mod runtime {
                     }
                     self.next_line();
                 }
+                IntoStr(reg) => {
+                    match self.registers[reg] {
+                        Types::Bool(b) => {
+                            self.registers[POINTER_REG] = Types::Pointer(
+                                self.str_from(b.to_string().chars().collect()),
+                                PointerTypes::String,
+                            );
+                        }
+                        Types::Char(c) => {
+                            self.registers[POINTER_REG] =
+                                Types::Pointer(self.str_from(vec![c]), PointerTypes::String);
+                        }
+                        Types::Int(i) => {
+                            self.registers[POINTER_REG] = Types::Pointer(
+                                self.str_from(i.to_string().chars().collect()),
+                                PointerTypes::String,
+                            );
+                        }
+                        Types::Float(f) => {
+                            self.registers[POINTER_REG] = Types::Pointer(
+                                self.str_from(f.to_string().chars().collect()),
+                                PointerTypes::String,
+                            );
+                        }
+                        Types::Null => {
+                            self.registers[POINTER_REG] = Types::Pointer(
+                                self.str_from("null".chars().collect()),
+                                PointerTypes::String,
+                            );
+                        }
+                        Types::NonPrimitive(kind) => {
+                            self.registers[POINTER_REG] = Types::Pointer(
+                                self.str_from(kind.to_string().chars().collect()),
+                                PointerTypes::String,
+                            );
+                        }
+                        _ => {
+                            return self.panic_rt(ErrTypes::Expected(
+                                Types::Pointer(0, PointerTypes::String),
+                                self.registers[reg],
+                            ));
+                        }
+                    }
+                    self.next_line();
+                }
                 StdOut(reg) => {
                     match self.registers[reg] {
                         Types::Pointer(u_size, kind) => match kind {
@@ -827,11 +885,11 @@ pub mod runtime {
                                 print!("{temp}");
                             }
                             _ => {
-                                panic!()
+                                unreachable!("StdOut: Invalid pointer type");
                             }
                         },
                         _ => {
-                            panic!()
+                            unreachable!("StdOut: Invalid type");
                         }
                     }
                     self.next_line()
@@ -1237,12 +1295,13 @@ pub mod runtime {
                     println!("{} {:?}", "Stack:", self.stack);
                     println!("{} {:?}", "Registers:", self.registers);
                     println!("{} {:?}", "Strings:", self.string_arena);
+                    println!("{} {:?}", "Garbage:", self.garbage);
                 }
             }
         }
         fn panic_rt(&mut self, kind: ErrTypes) -> bool {
             self.break_code = Some(self.code_ptr);
-            print_message(&kind);
+            print_message(&kind, Some((self.code_ptr, 0)));
             self.exit_code = ExitCodes::Internal(kind);
             false
         }
@@ -1260,6 +1319,7 @@ pub mod runtime_error {
         ImplicitCast(Types, Types),
         StackOverflow,
         CatchOwerflow,
+        MethodNotFound,
     }
     fn gen_message(header: String, line: Option<(usize, usize)>, err_no: u8) -> String {
         return if let Some(line) = line {
@@ -1269,7 +1329,7 @@ pub mod runtime_error {
             format!("\x1b[90mErr{err_no:03}\x1b[0m \x1b[91m{header}\x1b[0m\n\x1b[90mLocation unspecified.\x1b[0m")
         };
     }
-    pub fn print_message(kind: &ErrTypes) {
+    pub fn print_message(kind: &ErrTypes, line: Option<(usize, usize)>) {
         let data = match &kind {
             ErrTypes::CrossTypeOperation(var1, var2, instr) => (
                 format!("Operation '{instr}' failed: Cross-type operation {var1:+}, {var2:+}"),
@@ -1292,8 +1352,9 @@ pub mod runtime_error {
             ),
             ErrTypes::StackOverflow => (format!("Stack overflow"), 5), // TODO: impl this
             ErrTypes::CatchOwerflow => (format!("Catch overflow"), 6),
+            ErrTypes::MethodNotFound => (format!("Method not found"), 7),
         };
-        let message = gen_message(data.0, None, data.1);
+        let message = gen_message(data.0, line, data.1);
         println!("{message}");
     }
 }
@@ -1323,7 +1384,6 @@ pub mod runtime_types {
         pub heap: Vec<Vec<Types>>,
         pub string_arena: Vec<Vec<char>>,
         pub non_primitives: Vec<NonPrimitiveType>,
-        pub traits: Vec<Trait>,
         pub break_code: Option<usize>,
         pub catches: Catches,
         pub exit_code: ExitCodes,
@@ -1418,8 +1478,9 @@ pub mod runtime_types {
         pub kind: NonPrimitiveTypes,
         pub len: usize,
         pub pointers: usize,
+        // first index is trait id, second is method id
+        pub methods: Vec<Vec<usize>>,
     }
-    pub type Trait = Vec<usize>;
     use std::{clone, fmt, rc::Rc, sync::Arc};
 
     use super::runtime_error::{self, ErrTypes};
@@ -1611,8 +1672,8 @@ pub mod runtime_types {
         CpRng(usize, usize, usize),
         /// Break: code | program exits with a break code, indicating that it should be resumed at some point
         Break(usize),
-        /// Method: trait method | calls method belonging trait
-        Mtd(usize, usize),
+        /// Method: struct trait method | takes struct and calls method on it, assuming it implements trait  
+        Mtd(usize, usize, usize),
         /// Panic | program enters panic mode, returning from all stacks until exception is caught
         Panic,
         /// Catch | catches an error and returns program to normal mode, cached if read in normal mode
@@ -1629,6 +1690,8 @@ pub mod runtime_types {
         StrCpy(usize),
         /// String concat: val_reg | creates new string {reg(POINTER_REGISTER) + reg(value_reg)} and stores pointer in reg(POINTER_REG)
         StrCat(usize),
+        /// Into string: val_reg | converts value on reg(value_reg) to string and stores pointer in reg(POINTER_REG)
+        IntoStr(usize),
         /// Standard out: val_reg | outputs value on reg(value_reg) to stdout
         StdOut(usize),
     }
@@ -1678,7 +1741,7 @@ pub mod runtime_types {
                 Instructions::SweepUnoptimized => "SweepUnoptimized",
                 Instructions::TRng(_, _) => "ToRange",
                 Instructions::CpRng(_, _, _) => "CopyRange",
-                Instructions::Mtd(_, _) => "Method",
+                Instructions::Mtd(_, _, _) => "Method",
                 Instructions::Break(_) => "Break",
                 Instructions::Panic => "Panic",
                 Instructions::Catch => "Catch",
@@ -1690,6 +1753,7 @@ pub mod runtime_types {
                 Instructions::StrCat(_) => "StringConcat",
                 Instructions::StdOut(_) => "StandardOutput",
                 Instructions::Dalc => "Deallocate",
+                Instructions::IntoStr(_) => "IntoString",
             };
             write!(f, "{str}")
         }
