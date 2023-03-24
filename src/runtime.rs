@@ -814,6 +814,7 @@ pub mod runtime {
                             self.registers[reg],
                         ));
                     }
+                    self.next_line();
                 }
                 StdOut(reg) => {
                     match self.registers[reg] {
@@ -1209,8 +1210,7 @@ pub mod runtime {
         pub fn str_concat(&mut self, left: usize, right: usize) -> usize {
             let mut temp = self.string_arena[left].clone();
             temp.extend(self.string_arena[right].iter());
-            self.string_arena.push(temp);
-            self.string_arena.len() - 1
+            self.str_from(temp)
         }
         pub fn data_report(&self, runtime: Option<u128>) {
             use enable_ansi_support::enable_ansi_support;

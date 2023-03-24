@@ -258,7 +258,8 @@ pub mod test {
                     Debug(GENERAL_REG1),
                     Rdc(2, POINTER_REG),
                     SweepUnoptimized,
-                    StrNew,
+                    Rdc(0, GENERAL_REG1),
+                    StrCat(GENERAL_REG1),
                     End,
                 ];
                 true
