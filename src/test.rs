@@ -1,7 +1,10 @@
 pub mod test {
-    use crate::runtime::runtime_types::{Context, Instructions::*, Types::*, *};
+    use std::{cell::RefCell, mem};
 
-    const ID: usize = 8;
+    use crate::runtime::runtime::runtime_types::{Context, Instructions::*, Types::*, *};
+    use libloading::Library;
+
+    const ID: usize = 9;
     pub fn test_init(id: Option<usize>, context: &mut Context) -> bool {
         let test_id = if let Some(num) = id { num } else { ID };
         println!("Running test {test_id}");
@@ -226,7 +229,7 @@ pub mod test {
                 true
             }
             7 => {
-                context.string_arena = vec![
+                context.string_pool = vec![
                     "Hello world\n".chars().collect(),
                     "Length of h.w. string is: ".chars().collect(),
                     "gzjkh".chars().collect(),
@@ -252,7 +255,7 @@ pub mod test {
                         Types::Pointer(4, PointerTypes::String),
                         Types::Int(20),
                         Types::Int(180),
-                    ]
+                    ],
                 ];
                 context.stack = vec![
                     Types::Pointer(0, PointerTypes::String),
@@ -301,7 +304,7 @@ pub mod test {
             // test for trait system
             8 => {
                 // trait 0
-                // implements methods 
+                // implements methods
                 // 0: drive (takes self, returns nothing)
                 // 1: stop (takes self, returns int)
 
@@ -317,8 +320,8 @@ pub mod test {
                         methods: vec![
                             // trait 0
                             // drive = 1
-                            // stop = 
-                            vec![7, 19],
+                            // stop =
+                            vec![9, 19],
                         ],
                     },
                     // struct motorcycle, 3 fields, brand name, model, speed, id = 1
@@ -332,7 +335,7 @@ pub mod test {
                         methods: vec![],
                     },
                 ];
-                context.string_arena = vec![
+                context.string_pool = vec![
                     "I am driving with ".chars().collect(),
                     "I am stopping with ".chars().collect(),
                     "BMW".chars().collect(),
@@ -358,7 +361,6 @@ pub mod test {
                     Types::Null,
                     Types::Pointer(5, PointerTypes::String), // string " at "
                     Types::Pointer(6, PointerTypes::String), // string " km/h"
-
                 ];
                 context.code = vec![
                     // allocate memory on stack for every initialized variable
@@ -375,10 +377,14 @@ pub mod test {
                     // note: values are pushed in reverse order and indexing starts from 1
                     Wr(1, GENERAL_REG1),
                     Mtd(GENERAL_REG2, 0, 0),
+                    // return registers to their original values
+                    Ufrz,
+                    SweepUnoptimized,
                     End,
                     // method drive for car
                     // prints "I am driving with BMW at 200 km/h"
                     // methods have 1 argument, self
+                    // method return if it is for sports
                     // so we have to read it from the stack using Rd(stack_offset + 1, reg)
                     // rest of the methods will remain undeclared because they are take too long to write for human
                     Rd(1, POINTER_REG),
@@ -411,11 +417,41 @@ pub mod test {
                     Rdc(12, GENERAL_REG1),
                     StrCat(GENERAL_REG1),
                     StdOut(POINTER_REG),
+                    // load return value into return register
+                    Rd(1, POINTER_REG),
+                    IdxK(2),
+                    Rdp(RETURN_REG),
                     Ret,
                     // method stop for car
                     Rdc(1, GENERAL_REG1),
                     StdOut(GENERAL_REG1),
                     Ret,
+                ];
+                true
+            }
+            9 => {
+                let libs = vec!["./std/target/debug/dynstd.dll"];
+                context.libs = vec![];
+
+                for lib_path in &libs {
+                    let lib = unsafe { Library::new(lib_path).unwrap() };
+                    let init_fn: libloading::Symbol<fn() -> Box<dyn runtime::runtime::Library>> =
+                        unsafe { lib.get(b"init").unwrap() };
+                    let lib_box = init_fn();
+
+                    context.libs.push(lib_box);
+                    mem::forget(lib);
+                }
+
+                drop(libs);
+
+                context.string_pool = vec!["Hello, World!".chars().collect()];
+                context.stack = vec![Types::Pointer(0, PointerTypes::String)];
+                context.code = vec![
+                    Rdc(0, GENERAL_REG1),
+                    StdOut(GENERAL_REG1),
+                    Cal(0, 2),
+                    End,
                 ];
                 true
             }

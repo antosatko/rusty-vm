@@ -1,5 +1,5 @@
 [package]
-name = "rusty_vm"
+name = "runtime"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,8 +8,11 @@ edition = "2021"
 [dependencies]
 colored = "2.0.0"
 enable-ansi-support = "0.2.1"
-runtime = {path = "./runtime"}
-libloading = "0.7.0"
+
+
+[lib]
+name = "runtime"
+path = "lib.rs"
 
 
 [profile.dev]

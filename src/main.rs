@@ -1,10 +1,9 @@
 use reader::reader::*;
-use runtime::*;
-use runtime_types::*;
+extern crate runtime;
+use runtime::runtime::runtime_types::*;
 use std::{env, time::SystemTime};
 
 mod reader;
-mod runtime;
 mod test;
 //mod writer;
 fn main() {
@@ -30,4 +29,5 @@ fn main() {
                 .as_millis(),
         ));
     }
+    ctx.libs.clear()
 }
