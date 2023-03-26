@@ -621,7 +621,15 @@ pub mod runtime {
                 Cal(lib, fun_id) => {
                     match self.libs[lib].call(
                         fun_id,
-                        (&mut self.stack, &mut self.heap, &mut self.string_pool),
+                        PublicData { 
+                            registers: &mut self.registers,
+                            non_primitives: &mut self.non_primitives,
+                            stack_ptr: self.stack_ptr,
+                            call_stack: &mut self.call_stack,
+                            stack: &mut self.stack,
+                            heap: &mut self.heap,
+                            string_pool: &mut self.string_pool,
+                         },
                     ) {
                         Ok(value) => {
                             self.registers[RETURN_REG] = value;
@@ -1004,10 +1012,8 @@ pub mod runtime {
             self.sweep_marked_obj(marked.0);
             self.sweep_marked_string(marked.1);
             let last = self.last_string();
-            println!("last string: {}", last);
             self.string_pool.truncate(last);
             let last = self.last_obj();
-            println!("last obj: {}", last);
             self.heap.truncate(last);
         }
         fn sweep_marked_obj(&mut self, marked: Vec<bool>) {
@@ -1030,7 +1036,6 @@ pub mod runtime {
             }
         }
         fn sweep_marked_string(&mut self, marked: Vec<bool>) {
-            println!("marked: {:?}", marked);
             // find first string that is garbage and following strings are garbage and then remove them from garbage
             if let Some(idx) = marked.iter().rposition(|x| !*x) {
                 self.string_pool.truncate(idx + 1);
@@ -1050,7 +1055,6 @@ pub mod runtime {
                     }
                 }
             }
-            println!("string pool: {:?}", self.string_pool);
         }
         fn mark_unoptimized(&mut self) -> (Vec<bool>, Vec<bool>) {
             let mut marked_obj = Vec::new();
@@ -1360,37 +1364,10 @@ pub mod runtime {
             pub exit_code: ExitCodes,
             pub libs: Vec<Box<dyn Library>>,
         }
-        impl Clone for Context {
-            fn clone(&self) -> Self {
-                Self {
-                    stack: self.stack.clone(),
-                    call_stack: self.call_stack.clone(),
-                    stack_ptr: self.stack_ptr,
-                    registers: self.registers.clone(),
-                    code: self.code.clone(),
-                    code_ptr: self.code_ptr,
-                    garbage: self.garbage.clone(),
-                    heap: self.heap.clone(),
-                    string_pool: self.string_pool.clone(),
-                    non_primitives: self.non_primitives.clone(),
-                    break_code: self.break_code,
-                    catches: self.catches.clone(),
-                    exit_code: self.exit_code.clone(),
-                    libs: vec![],
-                }
-            }
-        }
-        /// this struct holds the data ready to be passed to a library function
-        /// it includes (data mutably borrowed from the runtime):
-        /// - stack
-        /// - stack pointer
-        /// - registers
-        /// - heap
-        /// - string pool
-        /// - non-primitives
         pub struct PublicData<'a> {
             pub stack: &'a mut Vec<Types>,
-            pub stack_ptr: &'a mut usize,
+            pub call_stack: &'a mut [CallStack; CALL_STACK_SIZE],
+            pub stack_ptr: usize,
             pub registers: &'a mut Registers,
             pub heap: &'a mut Vec<Vec<Types>>,
             pub string_pool: &'a mut Vec<Vec<char>>,
@@ -1837,7 +1814,7 @@ pub mod runtime {
         fn call(
             &mut self,
             id: usize,
-            mem: (&mut Vec<Types>, &mut Vec<Vec<Types>>, &mut Vec<Vec<char>>),
+            mem: PublicData,
         ) -> Result<Types, ErrTypes>;
         /// initializes the library
         fn init(&mut self, ctx: &mut Context) -> Result<Box<Self>, String>
@@ -1845,5 +1822,13 @@ pub mod runtime {
             Self: Sized;
         /// returns the name of the library
         fn name(&self) -> String;
+        /// returns the functions of the library
+        /// (name, id)
+        /// name must be in the format of
+        /// name: fun name<T>(args: T): T
+        /// 
+        /// this is only enforced by the compiler
+        /// and not by the interpreter
+        fn register(&self) -> Vec<(String, usize)>;
     }
 }

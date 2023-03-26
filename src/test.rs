@@ -4,6 +4,8 @@ pub mod test {
     use crate::runtime::runtime::runtime_types::{Context, Instructions::*, Types::*, *};
     use libloading::Library;
 
+    const STD: &str = "../rusty_standard_lib/{name}/target/debug/{name}.dll";
+
     const ID: usize = 9;
     pub fn test_init(id: Option<usize>, context: &mut Context) -> bool {
         let test_id = if let Some(num) = id { num } else { ID };
@@ -430,27 +432,26 @@ pub mod test {
                 true
             }
             9 => {
-                let libs = vec!["./std/target/debug/dynstd.dll"];
-                context.libs = vec![];
+                context.libs = load_libs(vec!["io"]);
 
-                for lib_path in &libs {
-                    let lib = unsafe { Library::new(lib_path).unwrap() };
-                    let init_fn: libloading::Symbol<fn() -> Box<dyn runtime::runtime::Library>> =
-                        unsafe { lib.get(b"init").unwrap() };
-                    let lib_box = init_fn();
-
-                    context.libs.push(lib_box);
-                    mem::forget(lib);
-                }
-
-                drop(libs);
-
-                context.string_pool = vec!["Hello, World!".chars().collect()];
-                context.stack = vec![Types::Pointer(0, PointerTypes::String)];
+                context.string_pool = vec![
+                    "Write something: ".chars().collect(),
+                    "You wrote: ".chars().collect(),
+                    ];
+                context.stack = vec![
+                    Types::Pointer(0, PointerTypes::String),
+                    Types::Pointer(1, PointerTypes::String),
+                    ];
                 context.code = vec![
-                    Rdc(0, GENERAL_REG1),
-                    StdOut(GENERAL_REG1),
+                    Rdc(0, POINTER_REG),
+                    Cal(0, 1),
                     Cal(0, 2),
+                    Move(RETURN_REG, GENERAL_REG1),
+                    // print it back
+                    Rdc(1, POINTER_REG),
+                    Cal(0, 0),
+                    Swap(GENERAL_REG1, POINTER_REG),
+                    Cal(0, 0),
                     SweepUnoptimized,
                     End,
                 ];
@@ -463,5 +464,25 @@ pub mod test {
                 true
             }
         }
+    }
+    pub fn load_libs(libs: Vec<&str>) -> Vec<Box<dyn runtime::runtime::Library>> {
+        let mut result = vec![];
+
+        for lib_path in &libs {
+            let lib = unsafe { Library::new(std_path(lib_path)).unwrap() };
+            let init_fn: libloading::Symbol<fn() -> Box<dyn runtime::runtime::Library>> =
+                unsafe { lib.get(b"init").unwrap() };
+            let lib_box = init_fn();
+
+            result.push(lib_box);
+            mem::forget(lib);
+        }
+
+        drop(libs);
+        result
+    }
+    // returns path to standard library
+    pub fn std_path(lib: &str) -> String {
+        format!("{}", STD.replace("{name}", lib))
     }
 }
