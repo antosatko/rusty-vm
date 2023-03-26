@@ -619,7 +619,10 @@ pub mod runtime {
                     self.next_line();
                 }
                 Cal(lib, fun_id) => {
-                    match self.libs[lib].call(fun_id, (&mut self.stack, &mut self.heap, &mut self.string_pool)) {
+                    match self.libs[lib].call(
+                        fun_id,
+                        (&mut self.stack, &mut self.heap, &mut self.string_pool),
+                    ) {
                         Ok(value) => {
                             self.registers[RETURN_REG] = value;
                         }
@@ -938,17 +941,15 @@ pub mod runtime {
             if self.string_pool.is_empty() {
                 return 0;
             }
-            // find first string that is in garbage and is empty and all strings after it are empty and in garbage and then remove it from garbage
+            // find first string that is garbage and following strings are garbage and dont remove any strings from garbage
             let mut i = self.string_pool.len() - 1;
             loop {
-                if i == 0 {
-                    return 0;
-                }
-                if self.string_pool[i].is_empty() {
-                    if let Some(idx) = self.garbage.string_pool.iter().position(|&x| x == i) {
-                        i -= 1;
-                        self.garbage.string_pool.remove(idx);
+                // if string is garbage and all strings after it are garbage then return i + 1
+                if self.garbage.string_pool.iter().any(|e| *e == i) {
+                    if i == 0 {
+                        return 0;
                     }
+                    i -= 1;
                 } else {
                     return i + 1;
                 }
@@ -958,17 +959,15 @@ pub mod runtime {
             if self.heap.is_empty() {
                 return 0;
             }
-            // find first obj that is in garbage and is empty and all objs after it are empty and in garbage and then remove it from garbage
+            // find first object that is garbage and following objects are garbage and dont remove any objects from garbage
             let mut i = self.heap.len() - 1;
             loop {
-                if i == 0 {
-                    return 0;
-                }
-                if self.heap[i].is_empty() && self.garbage.heap.contains(&i) {
-                    if let Some(idx) = self.garbage.heap.iter().position(|&x| x == i) {
-                        i -= 1;
-                        self.garbage.heap.remove(idx);
+                // if object is garbage and all objects after it are garbage then return i + 1
+                if self.garbage.heap.iter().any(|e| *e == i) {
+                    if i == 0 {
+                        return 0;
                     }
+                    i -= 1;
                 } else {
                     return i + 1;
                 }
@@ -1005,8 +1004,10 @@ pub mod runtime {
             self.sweep_marked_obj(marked.0);
             self.sweep_marked_string(marked.1);
             let last = self.last_string();
+            println!("last string: {}", last);
             self.string_pool.truncate(last);
             let last = self.last_obj();
+            println!("last obj: {}", last);
             self.heap.truncate(last);
         }
         fn sweep_marked_obj(&mut self, marked: Vec<bool>) {
@@ -1029,15 +1030,18 @@ pub mod runtime {
             }
         }
         fn sweep_marked_string(&mut self, marked: Vec<bool>) {
+            println!("marked: {:?}", marked);
+            // find first string that is garbage and following strings are garbage and then remove them from garbage
             if let Some(idx) = marked.iter().rposition(|x| !*x) {
                 self.string_pool.truncate(idx + 1);
             } else {
                 self.string_pool.clear();
                 return;
             }
+            // remove all strings that are marked
             for (i, mark) in marked.iter().enumerate() {
                 if i == self.string_pool.len() {
-                    return;
+                    continue;
                 }
                 if *mark {
                     self.string_pool[i].clear();
@@ -1046,6 +1050,7 @@ pub mod runtime {
                     }
                 }
             }
+            println!("string pool: {:?}", self.string_pool);
         }
         fn mark_unoptimized(&mut self) -> (Vec<bool>, Vec<bool>) {
             let mut marked_obj = Vec::new();
