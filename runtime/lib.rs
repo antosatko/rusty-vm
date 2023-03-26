@@ -1409,6 +1409,9 @@ pub mod runtime {
                 temp.extend(self.pool[right].iter());
                 self.from(temp)
             }
+            pub fn to_string(&self, loc: usize) -> String {
+                self.pool[loc].iter().collect()
+            }
         }
         pub struct Code {
             pub data: Vec<Instructions>,
