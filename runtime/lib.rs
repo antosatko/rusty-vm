@@ -11,23 +11,33 @@ pub mod runtime {
     impl Context {
         pub fn new() -> Self {
             Self {
-                stack: vec![],
-                call_stack: [CallStack {
-                    end: 0,
-                    code_ptr: 0,
-                    reg_freeze: [Types::Null; FREEZED_REG_SIZE],
-                    pointers_len: 0,
-                }; CALL_STACK_SIZE],
-                registers: [Types::Null; REGISTER_SIZE],
-                code: vec![],
-                code_ptr: 0,
-                heap: vec![],
-                garbage: Garbage {
-                    heap: vec![],
-                    string_pool: vec![],
+                memory: Memory {
+                    stack: Stack {
+                        data: vec![],
+                        ptr: 0,
+                        call_stack: [CallStack {
+                            end: 0,
+                            code_ptr: 0,
+                            reg_freeze: [Types::Null; FREEZED_REG_SIZE],
+                            pointers_len: 0,
+                        }; CALL_STACK_SIZE],
+                    },
+                    registers: [Types::Null; REGISTER_SIZE],
+                    heap: Heap {
+                        data: vec![],
+                        garbage: vec![],
+                    },
+                    strings: Strings {
+                        pool: vec![],
+                        garbage: vec![],
+                    },
+                    non_primitives: vec![],
                 },
-                stack_ptr: 0,
-                non_primitives: vec![],
+                code: Code {
+                    data: vec![],
+                    ptr: 0,
+                },
+
                 break_code: None,
                 catches: Catches {
                     catches_ptr: 0,
@@ -38,7 +48,7 @@ pub mod runtime {
                     }; CALL_STACK_SIZE],
                 },
                 exit_code: ExitCodes::End,
-                string_pool: vec![],
+
                 libs: vec![],
             }
         }
@@ -49,97 +59,98 @@ pub mod runtime {
         fn read_line(&mut self) -> bool {
             macro_rules! operation {
                 (ptr, $operand: ident, $num1: ident, bool) => {
-                    if let Types::Pointer(num2, _) = self.registers[GENERAL_REG2] {
-                        self.registers[GENERAL_REG1] = Types::Bool($num1.$operand(&num2));
+                    if let Types::Pointer(num2, _) = self.memory.registers[GENERAL_REG2] {
+                        self.memory.registers[GENERAL_REG1] = Types::Bool($num1.$operand(&num2));
                     } else {
                         return self.panic_rt(ErrTypes::CrossTypeOperation(
-                            self.registers[GENERAL_REG1],
-                            self.registers[GENERAL_REG2],
-                            self.code[self.code_ptr],
+                            self.memory.registers[GENERAL_REG1],
+                            self.memory.registers[GENERAL_REG2],
+                            self.code.data[self.code.ptr],
                         ));
                     }
                 };
                 ($type: tt, $operand: ident, $num1: ident, bool) => {
-                    if let Types::$type(num2) = self.registers[GENERAL_REG2] {
-                        self.registers[GENERAL_REG1] = Types::Bool($num1.$operand(&num2));
+                    if let Types::$type(num2) = self.memory.registers[GENERAL_REG2] {
+                        self.memory.registers[GENERAL_REG1] = Types::Bool($num1.$operand(&num2));
                     } else {
                         return self.panic_rt(ErrTypes::CrossTypeOperation(
-                            self.registers[GENERAL_REG1],
-                            self.registers[GENERAL_REG2],
-                            self.code[self.code_ptr],
+                            self.memory.registers[GENERAL_REG1],
+                            self.memory.registers[GENERAL_REG2],
+                            self.code.data[self.code.ptr],
                         ));
                     }
                 };
                 ($type: tt, $operand: ident, $num1: ident) => {
-                    if let Types::$type(num2) = self.registers[GENERAL_REG2] {
-                        self.registers[GENERAL_REG1] = Types::$type($num1.$operand(num2));
+                    if let Types::$type(num2) = self.memory.registers[GENERAL_REG2] {
+                        self.memory.registers[GENERAL_REG1] = Types::$type($num1.$operand(num2));
                     } else {
                         return self.panic_rt(ErrTypes::CrossTypeOperation(
-                            self.registers[GENERAL_REG1],
-                            self.registers[GENERAL_REG2],
-                            self.code[self.code_ptr],
+                            self.memory.registers[GENERAL_REG1],
+                            self.memory.registers[GENERAL_REG2],
+                            self.code.data[self.code.ptr],
                         ));
                     }
                 };
                 ($type: tt, %, $num1: ident) => {
-                    if let Types::$type(num2) = self.registers[GENERAL_REG2] {
-                        self.registers[GENERAL_REG1] = Types::$type($num1 % num2);
+                    if let Types::$type(num2) = self.memory.registers[GENERAL_REG2] {
+                        self.memory.registers[GENERAL_REG1] = Types::$type($num1 % num2);
                     } else {
                         return self.panic_rt(ErrTypes::CrossTypeOperation(
-                            self.registers[GENERAL_REG1],
-                            self.registers[GENERAL_REG2],
-                            self.code[self.code_ptr],
+                            self.memory.registers[GENERAL_REG1],
+                            self.memory.registers[GENERAL_REG2],
+                            self.code.data[self.code.ptr],
                         ));
                     }
                 };
             }
             use Instructions::*;
-            match self.code[self.code_ptr] {
+            match self.code.data[self.code.ptr] {
                 Wr(stack_offset, register) => {
                     let end = self.stack_end();
-                    self.stack[end - stack_offset] = self.registers[register];
+                    self.memory.stack.data[end - stack_offset] = self.memory.registers[register];
                     self.next_line();
                 }
                 Rd(stack_offset, reg) => {
                     // print stack offset and end
                     let end = self.stack_end();
-                    self.registers[reg] = self.stack[end - stack_offset];
+                    self.memory.registers[reg] = self.memory.stack.data[end - stack_offset];
                     self.next_line();
                 }
                 Wrp(value_reg) => {
-                    if let Types::Pointer(u_size, kind) = self.registers[POINTER_REG] {
+                    if let Types::Pointer(u_size, kind) = self.memory.registers[POINTER_REG] {
                         match kind {
                             PointerTypes::Stack => {
-                                self.stack[u_size] = self.registers[value_reg];
+                                self.memory.stack.data[u_size] = self.memory.registers[value_reg];
                             }
                             PointerTypes::Heap(loc) => {
-                                self.heap[u_size][loc] = self.registers[value_reg];
+                                self.memory.heap.data[u_size][loc] =
+                                    self.memory.registers[value_reg];
                             }
                             PointerTypes::Object => {
                                 return self.panic_rt(ErrTypes::Expected(
                                     Types::Pointer(0, PointerTypes::Heap(0)),
-                                    self.registers[POINTER_REG],
+                                    self.memory.registers[POINTER_REG],
                                 ));
                             }
                             PointerTypes::String => {
                                 if let Types::Pointer(dest, PointerTypes::String) =
-                                    self.registers[value_reg]
+                                    self.memory.registers[value_reg]
                                 {
-                                    self.str_copy_from(u_size, dest)
+                                    self.memory.strings.copy_from(u_size, dest)
                                 } else {
                                     return self.panic_rt(ErrTypes::Expected(
                                         Types::Pointer(0, PointerTypes::String),
-                                        self.registers[value_reg],
+                                        self.memory.registers[value_reg],
                                     ));
                                 }
                             }
                             PointerTypes::Char(loc) => {
-                                if let Types::Char(chr) = self.registers[value_reg] {
-                                    self.string_pool[u_size][loc] = chr
+                                if let Types::Char(chr) = self.memory.registers[value_reg] {
+                                    self.memory.strings.pool[u_size][loc] = chr
                                 } else {
                                     return self.panic_rt(ErrTypes::Expected(
                                         Types::Char('a'),
-                                        self.registers[value_reg],
+                                        self.memory.registers[value_reg],
                                     ));
                                 }
                             }
@@ -147,373 +158,375 @@ pub mod runtime {
                     } else {
                         return self.panic_rt(ErrTypes::Expected(
                             Types::Pointer(0, PointerTypes::Heap(0)),
-                            self.registers[POINTER_REG],
+                            self.memory.registers[POINTER_REG],
                         ));
                     }
                     self.next_line();
                 }
                 Rdp(cash_reg) => {
-                    if let Types::Pointer(u_size, kind) = self.registers[POINTER_REG] {
+                    if let Types::Pointer(u_size, kind) = self.memory.registers[POINTER_REG] {
                         match kind {
                             PointerTypes::Stack => {
-                                self.registers[cash_reg] = self.stack[u_size];
+                                self.memory.registers[cash_reg] = self.memory.stack.data[u_size];
                             }
                             PointerTypes::Heap(idx) => {
-                                self.registers[cash_reg] = self.heap[u_size][idx];
+                                self.memory.registers[cash_reg] =
+                                    self.memory.heap.data[u_size][idx];
                             }
                             PointerTypes::Object => {
                                 return self.panic_rt(ErrTypes::InvalidType(
-                                    self.registers[POINTER_REG],
+                                    self.memory.registers[POINTER_REG],
                                     Types::Pointer(0, PointerTypes::Heap(0)),
                                 ));
                             }
                             PointerTypes::String => {
                                 return self.panic_rt(ErrTypes::InvalidType(
-                                    self.registers[POINTER_REG],
+                                    self.memory.registers[POINTER_REG],
                                     Types::Pointer(0, PointerTypes::Heap(0)),
                                 ));
                             }
                             PointerTypes::Char(idx) => {
-                                self.registers[cash_reg] =
-                                    Types::Char(self.string_pool[u_size][idx]);
+                                self.memory.registers[cash_reg] =
+                                    Types::Char(self.memory.strings.pool[u_size][idx]);
                             }
                         }
                     } else {
                         return self.panic_rt(ErrTypes::InvalidType(
-                            self.registers[POINTER_REG],
+                            self.memory.registers[POINTER_REG],
                             Types::Pointer(0, PointerTypes::Heap(0)),
                         ));
                     }
                     self.next_line();
                 }
                 Rdc(stack_pos, reg) => {
-                    self.registers[reg] = self.stack[stack_pos];
+                    self.memory.registers[reg] = self.memory.stack.data[stack_pos];
                     self.next_line();
                 }
                 Ptr(stack_offset) => {
-                    self.registers[GENERAL_REG1] =
+                    self.memory.registers[GENERAL_REG1] =
                         Types::Pointer(self.stack_end() - stack_offset, PointerTypes::Stack);
                     self.next_line();
                 }
                 Idx(index_reg) => {
-                    if let Types::Pointer(u_size, kind) = self.registers[POINTER_REG] {
-                        if let Types::Usize(index) = self.registers[index_reg] {
+                    if let Types::Pointer(u_size, kind) = self.memory.registers[POINTER_REG] {
+                        if let Types::Usize(index) = self.memory.registers[index_reg] {
                             match kind {
                                 PointerTypes::Object => {
-                                    self.registers[POINTER_REG] =
+                                    self.memory.registers[POINTER_REG] =
                                         Types::Pointer(u_size, PointerTypes::Heap(index));
                                 }
                                 PointerTypes::Stack => {
-                                    self.registers[POINTER_REG] =
+                                    self.memory.registers[POINTER_REG] =
                                         Types::Pointer(u_size + index, PointerTypes::Stack);
                                 }
                                 PointerTypes::Heap(_) => {
                                     return self.panic_rt(ErrTypes::WrongTypeOperation(
-                                        self.registers[POINTER_REG],
-                                        self.code[self.code_ptr],
+                                        self.memory.registers[POINTER_REG],
+                                        self.code.data[self.code.ptr],
                                     ));
                                 }
                                 PointerTypes::Char(_) => {
                                     return self.panic_rt(ErrTypes::WrongTypeOperation(
-                                        self.registers[POINTER_REG],
-                                        self.code[self.code_ptr],
+                                        self.memory.registers[POINTER_REG],
+                                        self.code.data[self.code.ptr],
                                     ));
                                 }
                                 PointerTypes::String => {
-                                    self.registers[POINTER_REG] =
+                                    self.memory.registers[POINTER_REG] =
                                         Types::Pointer(u_size, PointerTypes::Char(index));
                                 }
                             }
                         } else {
                             return self.panic_rt(ErrTypes::WrongTypeOperation(
-                                self.registers[POINTER_REG],
-                                self.code[self.code_ptr],
+                                self.memory.registers[POINTER_REG],
+                                self.code.data[self.code.ptr],
                             ));
                         }
                     } else {
                         return self.panic_rt(ErrTypes::WrongTypeOperation(
-                            self.registers[POINTER_REG],
-                            self.code[self.code_ptr],
+                            self.memory.registers[POINTER_REG],
+                            self.code.data[self.code.ptr],
                         ));
                     }
                     self.next_line();
                 }
                 IdxK(index) => {
-                    if let Types::Pointer(u_size, kind) = self.registers[POINTER_REG] {
+                    if let Types::Pointer(u_size, kind) = self.memory.registers[POINTER_REG] {
                         match kind {
                             PointerTypes::Object => {
-                                self.registers[POINTER_REG] =
+                                self.memory.registers[POINTER_REG] =
                                     Types::Pointer(u_size, PointerTypes::Heap(index));
                             }
                             PointerTypes::Stack => {
-                                self.registers[POINTER_REG] =
+                                self.memory.registers[POINTER_REG] =
                                     Types::Pointer(u_size + index, PointerTypes::Stack);
                             }
                             PointerTypes::Heap(_) => {
                                 return self.panic_rt(ErrTypes::WrongTypeOperation(
-                                    self.registers[POINTER_REG],
-                                    self.code[self.code_ptr],
+                                    self.memory.registers[POINTER_REG],
+                                    self.code.data[self.code.ptr],
                                 ));
                             }
                             PointerTypes::Char(_) => {
                                 return self.panic_rt(ErrTypes::WrongTypeOperation(
-                                    self.registers[POINTER_REG],
-                                    self.code[self.code_ptr],
+                                    self.memory.registers[POINTER_REG],
+                                    self.code.data[self.code.ptr],
                                 ));
                             }
                             PointerTypes::String => {
-                                self.registers[POINTER_REG] =
+                                self.memory.registers[POINTER_REG] =
                                     Types::Pointer(u_size, PointerTypes::Char(index));
                             }
                         }
                     } else {
                         return self.panic_rt(ErrTypes::WrongTypeOperation(
-                            self.registers[POINTER_REG],
-                            self.code[self.code_ptr],
+                            self.memory.registers[POINTER_REG],
+                            self.code.data[self.code.ptr],
                         ));
                     }
                     self.next_line();
                 }
                 Alc(size_reg) => {
-                    if let Types::Usize(size) = self.registers[size_reg] {
-                        self.registers[POINTER_REG] =
-                            Types::Pointer(self.allocate_obj(size), PointerTypes::Object);
+                    if let Types::Usize(size) = self.memory.registers[size_reg] {
+                        self.memory.registers[POINTER_REG] =
+                            Types::Pointer(self.memory.allocate_obj(size), PointerTypes::Object);
                     } else {
                         return self.panic_rt(ErrTypes::Expected(
                             Types::Usize(0),
-                            self.registers[size_reg],
+                            self.memory.registers[size_reg],
                         ));
                     }
                     self.next_line();
                 }
                 AlcS(size) => {
-                    self.registers[POINTER_REG] =
-                        Types::Pointer(self.allocate_obj(size), PointerTypes::Object);
+                    self.memory.registers[POINTER_REG] =
+                        Types::Pointer(self.memory.allocate_obj(size), PointerTypes::Object);
                     self.next_line();
                 }
                 RAlc(size_reg) => {
-                    if let Types::Pointer(u_size, ptr_type) = self.registers[POINTER_REG] {
+                    if let Types::Pointer(u_size, ptr_type) = self.memory.registers[POINTER_REG] {
                         match ptr_type {
                             PointerTypes::Object => {
-                                if let Types::Usize(new_size) = self.registers[size_reg] {
-                                    self.resize_obj(u_size, new_size);
+                                if let Types::Usize(new_size) = self.memory.registers[size_reg] {
+                                    self.memory.resize_obj(u_size, new_size);
                                 } else {
                                     return self.panic_rt(ErrTypes::WrongTypeOperation(
-                                        self.registers[size_reg],
-                                        self.code[self.code_ptr],
+                                        self.memory.registers[size_reg],
+                                        self.code.data[self.code.ptr],
                                     ));
                                 }
                             }
                             PointerTypes::String => {
-                                if let Types::Usize(new_size) = self.registers[size_reg] {
-                                    self.string_pool[u_size].resize(new_size, 0 as char);
+                                if let Types::Usize(new_size) = self.memory.registers[size_reg] {
+                                    self.memory.strings.pool[u_size].resize(new_size, 0 as char);
                                 } else {
                                     return self.panic_rt(ErrTypes::WrongTypeOperation(
-                                        self.registers[size_reg],
-                                        self.code[self.code_ptr],
+                                        self.memory.registers[size_reg],
+                                        self.code.data[self.code.ptr],
                                     ));
                                 }
                             }
                             _ => {
                                 return self.panic_rt(ErrTypes::WrongTypeOperation(
-                                    self.registers[POINTER_REG],
-                                    self.code[self.code_ptr],
+                                    self.memory.registers[POINTER_REG],
+                                    self.code.data[self.code.ptr],
                                 ))
                             }
                         }
                     } else {
                         return self.panic_rt(ErrTypes::WrongTypeOperation(
-                            self.registers[POINTER_REG],
-                            self.code[self.code_ptr],
+                            self.memory.registers[POINTER_REG],
+                            self.code.data[self.code.ptr],
                         ));
                     }
                     self.next_line();
                 }
                 Dalc => {
-                    if let Types::Pointer(u_size, ptr_type) = self.registers[POINTER_REG] {
+                    if let Types::Pointer(u_size, ptr_type) = self.memory.registers[POINTER_REG] {
                         match ptr_type {
                             PointerTypes::Object => {
-                                self.deallocate_obj(u_size);
+                                self.memory.deallocate_obj(u_size);
                             }
                             PointerTypes::String => {
-                                self.deallocate_string(u_size);
+                                self.memory.deallocate_string(u_size);
                             }
                             _ => {
                                 return self.panic_rt(ErrTypes::WrongTypeOperation(
-                                    self.registers[POINTER_REG],
-                                    self.code[self.code_ptr],
+                                    self.memory.registers[POINTER_REG],
+                                    self.code.data[self.code.ptr],
                                 ))
                             }
                         }
                     } else {
                         return self.panic_rt(ErrTypes::WrongTypeOperation(
-                            self.registers[POINTER_REG],
-                            self.code[self.code_ptr],
+                            self.memory.registers[POINTER_REG],
+                            self.code.data[self.code.ptr],
                         ));
                     }
                     self.next_line();
                 }
                 Sweep => {
-                    self.sweep();
+                    self.memory.sweep();
                     self.next_line();
                 }
                 SweepUnoptimized => {
-                    self.sweep_unoptimized();
+                    self.memory.sweep_unoptimized();
                     self.next_line();
                 }
                 Goto(pos) => {
-                    self.code_ptr = pos;
+                    self.code.ptr = pos;
                 }
                 Jump(pos) => {
-                    self.call_stack[self.stack_ptr].code_ptr = self.code_ptr;
-                    self.code_ptr = pos;
+                    self.memory.stack.call_stack[self.memory.stack.ptr].code_ptr = self.code.ptr;
+                    self.code.ptr = pos;
                 }
                 Gotop => {
-                    if let Types::CodePointer(u_size) = self.registers[CODE_PTR_REG] {
-                        self.code_ptr = u_size
+                    if let Types::CodePointer(u_size) = self.memory.registers[CODE_PTR_REG] {
+                        self.code.ptr = u_size
                     } else {
                         return self.panic_rt(ErrTypes::InvalidType(
-                            self.registers[CODE_PTR_REG],
+                            self.memory.registers[CODE_PTR_REG],
                             Types::CodePointer(0),
                         ));
                     }
                 }
                 Brnc(pos1, pos2) => {
-                    if let Types::Bool(bool) = self.registers[GENERAL_REG1] {
-                        self.code_ptr = if bool { pos1 } else { pos2 };
+                    if let Types::Bool(bool) = self.memory.registers[GENERAL_REG1] {
+                        self.code.ptr = if bool { pos1 } else { pos2 };
                     } else {
                         return self.panic_rt(ErrTypes::WrongTypeOperation(
-                            self.registers[GENERAL_REG1],
-                            self.code[self.code_ptr],
+                            self.memory.registers[GENERAL_REG1],
+                            self.code.data[self.code.ptr],
                         ));
                     }
                 }
                 Ret => {
-                    self.code_ptr = self.call_stack[self.stack_ptr].code_ptr;
-                    self.stack_ptr -= 1;
+                    self.code.ptr = self.memory.stack.call_stack[self.memory.stack.ptr].code_ptr;
+                    self.memory.stack.ptr -= 1;
                     self.next_line();
                 }
                 Back => {
-                    self.code_ptr = self.call_stack[self.stack_ptr].code_ptr;
+                    self.code.ptr = self.memory.stack.call_stack[self.memory.stack.ptr].code_ptr;
                     self.next_line();
                 }
                 Ufrz => {
                     for i in 0..FREEZED_REG_SIZE {
-                        self.registers[i] = self.call_stack[self.stack_ptr].reg_freeze[i]
+                        self.memory.registers[i] =
+                            self.memory.stack.call_stack[self.memory.stack.ptr].reg_freeze[i]
                     }
                     self.next_line();
                 }
                 Res(size, pointers_len) => {
                     let end = self.stack_end() + size;
-                    self.stack_ptr += 1;
-                    if self.stack_ptr >= self.call_stack.len() {
-                        if self.stack_ptr > self.call_stack.len() {
+                    self.memory.stack.ptr += 1;
+                    if self.memory.stack.ptr >= self.memory.stack.call_stack.len() {
+                        if self.memory.stack.ptr > self.memory.stack.call_stack.len() {
                             loop {
                                 println!("Samik mel pravdu, ale tohle stejne nikdy neuvidis ;p");
                             }
                         }
                         return self.panic_rt(ErrTypes::StackOverflow);
                     }
-                    self.call_stack[self.stack_ptr].end = end;
-                    self.call_stack[self.stack_ptr].pointers_len = pointers_len;
-                    if end > self.stack.len() {
-                        self.stack.resize(end, Types::Null);
+                    self.memory.stack.call_stack[self.memory.stack.ptr].end = end;
+                    self.memory.stack.call_stack[self.memory.stack.ptr].pointers_len = pointers_len;
+                    if end > self.memory.stack.data.len() {
+                        self.memory.stack.data.resize(end, Types::Null);
                     }
                     self.next_line();
                 }
                 Frz => {
-                    self.call_stack[self.stack_ptr]
+                    self.memory.stack.call_stack[self.memory.stack.ptr]
                         .reg_freeze
-                        .clone_from_slice(&self.registers[..3]);
+                        .clone_from_slice(&self.memory.registers[..3]);
                     self.next_line();
                 }
                 Swap(reg1, reg2) => {
-                    let temp = self.registers[reg1];
-                    self.registers[reg1] = self.registers[reg2];
-                    self.registers[reg2] = temp;
+                    let temp = self.memory.registers[reg1];
+                    self.memory.registers[reg1] = self.memory.registers[reg2];
+                    self.memory.registers[reg2] = temp;
                     self.next_line();
                 }
                 Move(reg1, reg2) => {
-                    self.registers[reg2] = self.registers[reg1];
+                    self.memory.registers[reg2] = self.memory.registers[reg1];
                     self.next_line();
                 }
                 Add => {
-                    match self.registers[GENERAL_REG1] {
+                    match self.memory.registers[GENERAL_REG1] {
                         Types::Int(num1) => operation!(Int, add, num1),
                         Types::Float(num1) => operation!(Float, add, num1),
                         Types::Byte(num1) => operation!(Byte, add, num1),
                         Types::Usize(num1) => operation!(Usize, add, num1),
                         _ => {
                             return self.panic_rt(ErrTypes::WrongTypeOperation(
-                                self.registers[GENERAL_REG1],
-                                self.code[self.code_ptr],
+                                self.memory.registers[GENERAL_REG1],
+                                self.code.data[self.code.ptr],
                             ));
                         }
                     }
                     self.next_line();
                 }
                 Sub => {
-                    match self.registers[GENERAL_REG1] {
+                    match self.memory.registers[GENERAL_REG1] {
                         Types::Int(num1) => operation!(Int, sub, num1),
                         Types::Float(num1) => operation!(Float, sub, num1),
                         Types::Byte(num1) => operation!(Byte, sub, num1),
                         Types::Usize(num1) => operation!(Usize, sub, num1),
                         _ => {
                             return self.panic_rt(ErrTypes::WrongTypeOperation(
-                                self.registers[GENERAL_REG1],
-                                self.code[self.code_ptr],
+                                self.memory.registers[GENERAL_REG1],
+                                self.code.data[self.code.ptr],
                             ));
                         }
                     }
                     self.next_line();
                 }
                 Mul => {
-                    match self.registers[GENERAL_REG1] {
+                    match self.memory.registers[GENERAL_REG1] {
                         Types::Int(num1) => operation!(Int, mul, num1),
                         Types::Float(num1) => operation!(Float, mul, num1),
                         Types::Byte(num1) => operation!(Byte, mul, num1),
                         Types::Usize(num1) => operation!(Usize, mul, num1),
                         _ => {
                             return self.panic_rt(ErrTypes::WrongTypeOperation(
-                                self.registers[GENERAL_REG1],
-                                self.code[self.code_ptr],
+                                self.memory.registers[GENERAL_REG1],
+                                self.code.data[self.code.ptr],
                             ));
                         }
                     }
                     self.next_line();
                 }
                 Div => {
-                    match self.registers[GENERAL_REG1] {
+                    match self.memory.registers[GENERAL_REG1] {
                         Types::Int(num1) => operation!(Int, div, num1),
                         Types::Float(num1) => operation!(Float, div, num1),
                         Types::Byte(num1) => operation!(Byte, div, num1),
                         Types::Usize(num1) => operation!(Usize, div, num1),
                         _ => {
                             return self.panic_rt(ErrTypes::WrongTypeOperation(
-                                self.registers[GENERAL_REG1],
-                                self.code[self.code_ptr],
+                                self.memory.registers[GENERAL_REG1],
+                                self.code.data[self.code.ptr],
                             ));
                         }
                     }
                     self.next_line();
                 }
                 Mod => {
-                    match self.registers[GENERAL_REG1] {
+                    match self.memory.registers[GENERAL_REG1] {
                         Types::Int(num1) => operation!(Int, %, num1),
                         Types::Float(num1) => operation!(Float, %, num1),
                         Types::Byte(num1) => operation!(Byte, %, num1),
                         Types::Usize(num1) => operation!(Usize, %, num1),
                         _ => {
                             return self.panic_rt(ErrTypes::WrongTypeOperation(
-                                self.registers[GENERAL_REG1],
-                                self.code[self.code_ptr],
+                                self.memory.registers[GENERAL_REG1],
+                                self.code.data[self.code.ptr],
                             ));
                         }
                     }
                     self.next_line();
                 }
                 Equ => {
-                    match self.registers[GENERAL_REG1] {
+                    match self.memory.registers[GENERAL_REG1] {
                         Types::Int(num1) => operation!(Int, eq, num1, bool),
                         Types::Float(num1) => operation!(Float, eq, num1, bool),
                         Types::Byte(num1) => operation!(Byte, eq, num1, bool),
@@ -523,15 +536,15 @@ pub mod runtime {
                         Types::Char(char1) => operation!(Char, eq, char1, bool),
                         _ => {
                             return self.panic_rt(ErrTypes::WrongTypeOperation(
-                                self.registers[GENERAL_REG1],
-                                self.code[self.code_ptr],
+                                self.memory.registers[GENERAL_REG1],
+                                self.code.data[self.code.ptr],
                             ));
                         }
                     }
                     self.next_line();
                 }
                 Grt => {
-                    match self.registers[GENERAL_REG1] {
+                    match self.memory.registers[GENERAL_REG1] {
                         Types::Int(num1) => operation!(Int, gt, num1, bool),
                         Types::Float(num1) => operation!(Float, gt, num1, bool),
                         Types::Byte(num1) => operation!(Byte, gt, num1, bool),
@@ -539,15 +552,15 @@ pub mod runtime {
                         Types::Char(char1) => operation!(Char, gt, char1, bool),
                         _ => {
                             return self.panic_rt(ErrTypes::WrongTypeOperation(
-                                self.registers[GENERAL_REG1],
-                                self.code[self.code_ptr],
+                                self.memory.registers[GENERAL_REG1],
+                                self.code.data[self.code.ptr],
                             ));
                         }
                     }
                     self.next_line();
                 }
                 Less => {
-                    match self.registers[GENERAL_REG1] {
+                    match self.memory.registers[GENERAL_REG1] {
                         Types::Int(num1) => operation!(Int, lt, num1, bool),
                         Types::Float(num1) => operation!(Float, lt, num1, bool),
                         Types::Byte(num1) => operation!(Byte, lt, num1, bool),
@@ -555,64 +568,64 @@ pub mod runtime {
                         Types::Char(char1) => operation!(Char, lt, char1, bool),
                         _ => {
                             return self.panic_rt(ErrTypes::WrongTypeOperation(
-                                self.registers[GENERAL_REG1],
-                                self.code[self.code_ptr],
+                                self.memory.registers[GENERAL_REG1],
+                                self.code.data[self.code.ptr],
                             ));
                         }
                     }
                     self.next_line();
                 }
                 And => {
-                    match self.registers[GENERAL_REG1] {
+                    match self.memory.registers[GENERAL_REG1] {
                         Types::Bool(var1) => {
-                            if let Types::Bool(var2) = self.registers[GENERAL_REG2] {
-                                self.registers[GENERAL_REG1] = Types::Bool(var1 && var2)
+                            if let Types::Bool(var2) = self.memory.registers[GENERAL_REG2] {
+                                self.memory.registers[GENERAL_REG1] = Types::Bool(var1 && var2)
                             } else {
                                 return self.panic_rt(ErrTypes::CrossTypeOperation(
-                                    self.registers[GENERAL_REG1],
-                                    self.registers[GENERAL_REG2],
-                                    self.code[self.code_ptr],
+                                    self.memory.registers[GENERAL_REG1],
+                                    self.memory.registers[GENERAL_REG2],
+                                    self.code.data[self.code.ptr],
                                 ));
                             }
                         }
                         _ => {
                             return self.panic_rt(ErrTypes::WrongTypeOperation(
-                                self.registers[GENERAL_REG1],
-                                self.code[self.code_ptr],
+                                self.memory.registers[GENERAL_REG1],
+                                self.code.data[self.code.ptr],
                             ));
                         }
                     }
                     self.next_line();
                 }
                 Or => {
-                    match self.registers[GENERAL_REG1] {
+                    match self.memory.registers[GENERAL_REG1] {
                         Types::Bool(var1) => {
-                            if let Types::Bool(var2) = self.registers[GENERAL_REG2] {
-                                self.registers[GENERAL_REG1] = Types::Bool(var1 || var2)
+                            if let Types::Bool(var2) = self.memory.registers[GENERAL_REG2] {
+                                self.memory.registers[GENERAL_REG1] = Types::Bool(var1 || var2)
                             } else {
                                 return self.panic_rt(ErrTypes::CrossTypeOperation(
-                                    self.registers[GENERAL_REG1],
-                                    self.registers[GENERAL_REG2],
-                                    self.code[self.code_ptr],
+                                    self.memory.registers[GENERAL_REG1],
+                                    self.memory.registers[GENERAL_REG2],
+                                    self.code.data[self.code.ptr],
                                 ));
                             }
                         }
                         _ => {
                             return self.panic_rt(ErrTypes::WrongTypeOperation(
-                                self.registers[GENERAL_REG1],
-                                self.code[self.code_ptr],
+                                self.memory.registers[GENERAL_REG1],
+                                self.code.data[self.code.ptr],
                             ));
                         }
                     }
                     self.next_line();
                 }
                 Not => {
-                    match self.registers[GENERAL_REG1] {
-                        Types::Bool(var) => self.registers[GENERAL_REG1] = Types::Bool(!var),
+                    match self.memory.registers[GENERAL_REG1] {
+                        Types::Bool(var) => self.memory.registers[GENERAL_REG1] = Types::Bool(!var),
                         _ => {
                             return self.panic_rt(ErrTypes::WrongTypeOperation(
-                                self.registers[GENERAL_REG1],
-                                self.code[self.code_ptr],
+                                self.memory.registers[GENERAL_REG1],
+                                self.code.data[self.code.ptr],
                             ));
                         }
                     }
@@ -621,18 +634,16 @@ pub mod runtime {
                 Cal(lib, fun_id) => {
                     match self.libs[lib].call(
                         fun_id,
-                        PublicData { 
-                            registers: &mut self.registers,
-                            non_primitives: &mut self.non_primitives,
-                            stack_ptr: self.stack_ptr,
-                            call_stack: &mut self.call_stack,
-                            stack: &mut self.stack,
-                            heap: &mut self.heap,
-                            string_pool: &mut self.string_pool,
-                         },
+                        PublicData {
+                            memory: &mut self.memory,
+                            code: &mut self.code,
+                        },
                     ) {
                         Ok(value) => {
-                            self.registers[RETURN_REG] = value;
+                            if let Types::Void = value {
+                            } else {
+                                self.memory.registers[RETURN_REG] = value;
+                            }
                         }
                         Err(err) => {
                             return self.panic_rt(err);
@@ -641,119 +652,127 @@ pub mod runtime {
                     self.next_line();
                 }
                 Mtd(obj, trt, method) => {
-                    if let Types::NonPrimitive(id) = self.registers[obj] {
-                        if let Some(method) = self.non_primitives[id].methods[trt].get(method) {
-                            self.call_stack[self.stack_ptr].code_ptr = self.code_ptr;
-                            self.code_ptr = *method;
+                    if let Types::NonPrimitive(id) = self.memory.registers[obj] {
+                        if let Some(method) =
+                            self.memory.non_primitives[id].methods[trt].get(method)
+                        {
+                            self.memory.stack.call_stack[self.memory.stack.ptr].code_ptr =
+                                self.code.ptr;
+                            self.code.ptr = *method;
                         } else {
                             return self.panic_rt(ErrTypes::MethodNotFound);
                         }
                     } else {
                         return self.panic_rt(ErrTypes::WrongTypeOperation(
-                            self.registers[obj],
-                            self.code[self.code_ptr],
+                            self.memory.registers[obj],
+                            self.code.data[self.code.ptr],
                         ));
                     }
-                    /*self.call_stack[self.stack_ptr].code_ptr = self.code_ptr;
-                    self.code_ptr = self.non_primitives[obj].methods[trt][method];*/
+                    /*self.memory.stack.call_stack[self.memory.stack.ptr].code_ptr = self.code.ptr;
+                    self.code.ptr = self.memory.non_primitives[obj].methods[trt][method];*/
                 }
                 End => {
                     return false;
                 }
                 Debug(reg) => {
-                    println!("{:+}", self.registers[reg]);
+                    println!("{:+}", self.memory.registers[reg]);
                     self.next_line();
                 }
                 Len(reg) => {
-                    if let Types::NonPrimitive(kind) = self.registers[reg] {
-                        self.registers[reg] = Types::Usize(self.non_primitives[kind].len)
-                    } else if let Types::Pointer(u_size, kind) = self.registers[reg] {
+                    if let Types::NonPrimitive(kind) = self.memory.registers[reg] {
+                        self.memory.registers[reg] =
+                            Types::Usize(self.memory.non_primitives[kind].len)
+                    } else if let Types::Pointer(u_size, kind) = self.memory.registers[reg] {
                         match kind {
                             PointerTypes::Object => {
-                                self.registers[reg] = Types::Usize(self.heap[u_size].len())
+                                self.memory.registers[reg] =
+                                    Types::Usize(self.memory.heap.data[u_size].len())
                             }
                             PointerTypes::String => {
-                                self.registers[reg] = Types::Usize(self.string_pool[u_size].len())
+                                self.memory.registers[reg] =
+                                    Types::Usize(self.memory.strings.pool[u_size].len())
                             }
                             _ => {
                                 return self.panic_rt(ErrTypes::WrongTypeOperation(
-                                    self.registers[reg],
-                                    self.code[self.code_ptr],
+                                    self.memory.registers[reg],
+                                    self.code.data[self.code.ptr],
                                 ));
                             }
                         }
                     } else {
                         return self.panic_rt(ErrTypes::InvalidType(
-                            self.registers[reg],
+                            self.memory.registers[reg],
                             Types::NonPrimitive(0),
                         ));
                     }
                     self.next_line()
                 }
                 CpRng(original, new, len) => {
-                    let new_ptr = if let Types::Pointer(u_size, kind) = self.registers[new] {
+                    let new_ptr = if let Types::Pointer(u_size, kind) = self.memory.registers[new] {
                         (u_size, kind)
                     } else {
                         return self.panic_rt(ErrTypes::WrongTypeOperation(
-                            self.registers[new],
+                            self.memory.registers[new],
                             CpRng(0, 0, 0),
                         ));
                     };
-                    if let Types::Pointer(u_size, kind) = self.registers[original] {
+                    if let Types::Pointer(u_size, kind) = self.memory.registers[original] {
                         for i in 0..len {
                             let value = match kind {
-                                PointerTypes::Object => self.heap[u_size][i],
-                                PointerTypes::String => Types::Char(self.string_pool[u_size][i]),
-                                PointerTypes::Stack => self.stack[u_size + i],
-                                PointerTypes::Heap(idx) => self.heap[u_size][i + idx],
+                                PointerTypes::Object => self.memory.heap.data[u_size][i],
+                                PointerTypes::String => {
+                                    Types::Char(self.memory.strings.pool[u_size][i])
+                                }
+                                PointerTypes::Stack => self.memory.stack.data[u_size + i],
+                                PointerTypes::Heap(idx) => self.memory.heap.data[u_size][i + idx],
                                 PointerTypes::Char(idx) => {
-                                    Types::Char(self.string_pool[u_size][i + idx])
+                                    Types::Char(self.memory.strings.pool[u_size][i + idx])
                                 }
                             };
                             match new_ptr.1 {
                                 PointerTypes::Object => {
-                                    self.heap[new_ptr.0][i] = value;
+                                    self.memory.heap.data[new_ptr.0][i] = value;
                                 }
                                 PointerTypes::String => {
-                                    self.string_pool[new_ptr.0][i] = value.get_char();
+                                    self.memory.strings.pool[new_ptr.0][i] = value.get_char();
                                 }
                                 PointerTypes::Stack => {
-                                    self.stack[new_ptr.0 + i] = value;
+                                    self.memory.stack.data[new_ptr.0 + i] = value;
                                 }
                                 PointerTypes::Heap(idx) => {
-                                    self.heap[new_ptr.0][idx + i] = value;
+                                    self.memory.heap.data[new_ptr.0][idx + i] = value;
                                 }
                                 PointerTypes::Char(idx) => {
-                                    self.string_pool[new_ptr.0][idx + i] = value.get_char();
+                                    self.memory.strings.pool[new_ptr.0][idx + i] = value.get_char();
                                 }
                             }
                         }
                     } else {
                         return self.panic_rt(ErrTypes::WrongTypeOperation(
-                            self.registers[original],
+                            self.memory.registers[original],
                             CpRng(0, 0, 0),
                         ));
                     }
                 }
                 TRng(val, len) => {
-                    let value = self.registers[val];
-                    if let Types::Pointer(u_size, kind) = self.registers[POINTER_REG] {
+                    let value = self.memory.registers[val];
+                    if let Types::Pointer(u_size, kind) = self.memory.registers[POINTER_REG] {
                         for i in 0..len {
                             match kind {
                                 PointerTypes::Object => {
-                                    self.heap[u_size][i] = value;
+                                    self.memory.heap.data[u_size][i] = value;
                                 }
                                 PointerTypes::Stack => {
-                                    self.stack[u_size + i] = value;
+                                    self.memory.stack.data[u_size + i] = value;
                                 }
                                 PointerTypes::Heap(idx) => {
-                                    self.heap[u_size][i + idx] = value;
+                                    self.memory.heap.data[u_size][i + idx] = value;
                                 }
                                 PointerTypes::Char(idx) => {
-                                    self.string_pool[u_size][i + idx] = value.get_char();
+                                    self.memory.strings.pool[u_size][i + idx] = value.get_char();
                                 }
                                 PointerTypes::String => {
-                                    self.string_pool[u_size][i] = value.get_char();
+                                    self.memory.strings.pool[u_size][i] = value.get_char();
                                 }
                             }
                         }
@@ -761,23 +780,24 @@ pub mod runtime {
                 }
                 Type(reg1, reg2) => {
                     use std::mem::discriminant;
-                    self.registers[reg2] = Types::Bool(
-                        discriminant(&self.registers[reg1]) == discriminant(&self.registers[reg2]),
+                    self.memory.registers[reg2] = Types::Bool(
+                        discriminant(&self.memory.registers[reg1])
+                            == discriminant(&self.memory.registers[reg2]),
                     );
                     self.next_line();
                 }
                 NPType(np_reg, id) => {
-                    if let Types::NonPrimitive(id_dyn) = self.registers[np_reg] {
-                        self.registers[GENERAL_REG3] = Types::Bool(id == id_dyn);
+                    if let Types::NonPrimitive(id_dyn) = self.memory.registers[np_reg] {
+                        self.memory.registers[GENERAL_REG3] = Types::Bool(id == id_dyn);
                     } else {
                         return self.panic_rt(ErrTypes::Expected(
                             Types::NonPrimitive(0),
-                            self.registers[np_reg],
+                            self.memory.registers[np_reg],
                         ));
                     }
                 }
                 Cast(reg1, ttype) => {
-                    if let Err(err) = Self::cast(&mut self.registers, reg1, ttype) {
+                    if let Err(err) = Self::cast(&mut self.memory.registers, reg1, ttype) {
                         return self.panic_rt(err);
                     }
                     self.next_line();
@@ -788,9 +808,9 @@ pub mod runtime {
                 }
                 Catch => {
                     if let Err(err) = self.catches.push(runtime_types::Catch {
-                        code_ptr: self.code_ptr,
+                        code_ptr: self.code.ptr,
                         id: None,
-                        cs_ptr: self.stack_ptr,
+                        cs_ptr: self.memory.stack.ptr,
                     }) {
                         return self.panic_rt(err);
                     }
@@ -798,9 +818,9 @@ pub mod runtime {
                 }
                 CatchId(id) => {
                     if let Err(err) = self.catches.push(runtime_types::Catch {
-                        code_ptr: self.code_ptr,
+                        code_ptr: self.code.ptr,
                         id: Some(id),
-                        cs_ptr: self.stack_ptr,
+                        cs_ptr: self.memory.stack.ptr,
                     }) {
                         return self.panic_rt(err);
                     }
@@ -811,93 +831,101 @@ pub mod runtime {
                     self.next_line()
                 }
                 StrCpy(reg) => {
-                    if let Types::Pointer(u_size, PointerTypes::String) = self.registers[reg] {
-                        self.registers[POINTER_REG] =
-                            Types::Pointer(self.str_copy(u_size), PointerTypes::String);
+                    if let Types::Pointer(u_size, PointerTypes::String) = self.memory.registers[reg]
+                    {
+                        self.memory.registers[POINTER_REG] =
+                            Types::Pointer(self.memory.strings.copy(u_size), PointerTypes::String);
                     } else {
                         return self.panic_rt(ErrTypes::Expected(
                             Types::Pointer(0, PointerTypes::String),
-                            self.registers[reg],
+                            self.memory.registers[reg],
                         ));
                     }
                     self.next_line();
                 }
                 StrNew => {
-                    self.registers[POINTER_REG] =
-                        Types::Pointer(self.str_new(), PointerTypes::String);
+                    self.memory.registers[POINTER_REG] =
+                        Types::Pointer(self.memory.strings.new(), PointerTypes::String);
                     self.next_line();
                 }
                 StrCat(reg) => {
-                    if let Types::Pointer(left, PointerTypes::String) = self.registers[POINTER_REG]
+                    if let Types::Pointer(left, PointerTypes::String) =
+                        self.memory.registers[POINTER_REG]
                     {
-                        if let Types::Pointer(right, PointerTypes::String) = self.registers[reg] {
-                            self.registers[POINTER_REG] =
-                                Types::Pointer(self.str_concat(left, right), PointerTypes::String);
+                        if let Types::Pointer(right, PointerTypes::String) =
+                            self.memory.registers[reg]
+                        {
+                            self.memory.registers[POINTER_REG] = Types::Pointer(
+                                self.memory.strings.concat(left, right),
+                                PointerTypes::String,
+                            );
                         } else {
                             return self.panic_rt(ErrTypes::Expected(
                                 Types::Pointer(0, PointerTypes::String),
-                                self.registers[reg],
+                                self.memory.registers[reg],
                             ));
                         }
                     } else {
                         return self.panic_rt(ErrTypes::Expected(
                             Types::Pointer(0, PointerTypes::String),
-                            self.registers[reg],
+                            self.memory.registers[reg],
                         ));
                     }
                     self.next_line();
                 }
                 IntoStr(reg) => {
-                    match self.registers[reg] {
+                    match self.memory.registers[reg] {
                         Types::Bool(b) => {
-                            self.registers[POINTER_REG] = Types::Pointer(
-                                self.str_from(b.to_string().chars().collect()),
+                            self.memory.registers[POINTER_REG] = Types::Pointer(
+                                self.memory.strings.from(b.to_string().chars().collect()),
                                 PointerTypes::String,
                             );
                         }
                         Types::Char(c) => {
-                            self.registers[POINTER_REG] =
-                                Types::Pointer(self.str_from(vec![c]), PointerTypes::String);
+                            self.memory.registers[POINTER_REG] = Types::Pointer(
+                                self.memory.strings.from(vec![c]),
+                                PointerTypes::String,
+                            );
                         }
                         Types::Int(i) => {
-                            self.registers[POINTER_REG] = Types::Pointer(
-                                self.str_from(i.to_string().chars().collect()),
+                            self.memory.registers[POINTER_REG] = Types::Pointer(
+                                self.memory.strings.from(i.to_string().chars().collect()),
                                 PointerTypes::String,
                             );
                         }
                         Types::Float(f) => {
-                            self.registers[POINTER_REG] = Types::Pointer(
-                                self.str_from(f.to_string().chars().collect()),
+                            self.memory.registers[POINTER_REG] = Types::Pointer(
+                                self.memory.strings.from(f.to_string().chars().collect()),
                                 PointerTypes::String,
                             );
                         }
                         Types::Null => {
-                            self.registers[POINTER_REG] = Types::Pointer(
-                                self.str_from("null".chars().collect()),
+                            self.memory.registers[POINTER_REG] = Types::Pointer(
+                                self.memory.strings.from("null".chars().collect()),
                                 PointerTypes::String,
                             );
                         }
                         Types::NonPrimitive(kind) => {
-                            self.registers[POINTER_REG] = Types::Pointer(
-                                self.str_from(kind.to_string().chars().collect()),
+                            self.memory.registers[POINTER_REG] = Types::Pointer(
+                                self.memory.strings.from(kind.to_string().chars().collect()),
                                 PointerTypes::String,
                             );
                         }
                         _ => {
                             return self.panic_rt(ErrTypes::Expected(
                                 Types::Pointer(0, PointerTypes::String),
-                                self.registers[reg],
+                                self.memory.registers[reg],
                             ));
                         }
                     }
                     self.next_line();
                 }
                 StdOut(reg) => {
-                    match self.registers[reg] {
+                    match self.memory.registers[reg] {
                         Types::Pointer(u_size, kind) => match kind {
                             PointerTypes::String => {
                                 let mut temp = String::new();
-                                for chr in &self.string_pool[u_size] {
+                                for chr in &self.memory.strings.pool[u_size] {
                                     temp.push(*chr);
                                 }
                                 print!("{temp}");
@@ -919,220 +947,11 @@ pub mod runtime {
             }
             return true;
         }
-        // allocator starts here
-        fn allocate_obj(&mut self, size: usize) -> usize {
-            let mut data = Vec::new();
-            data.resize(size, Types::Null);
-            if let Some(idx) = self.garbage.heap.pop() {
-                self.heap[idx] = data;
-                return idx;
-            }
-            self.heap.push(data);
-            self.heap.len() - 1
-        }
-        fn deallocate_obj(&mut self, idx: usize) -> bool {
-            if idx >= self.heap.len() {
-                return false;
-            }
-            if idx == self.heap.len() - 1 {
-                self.heap.pop();
-                // get largest index of non garbage obj using last obj and truncate
-                let last = self.last_obj();
-                self.heap.truncate(last);
-                return true;
-            }
-            self.garbage.heap.push(idx);
-            self.heap[idx].clear();
-            true
-        }
-        fn last_string(&mut self) -> usize {
-            if self.string_pool.is_empty() {
-                return 0;
-            }
-            // find first string that is garbage and following strings are garbage and dont remove any strings from garbage
-            let mut i = self.string_pool.len() - 1;
-            loop {
-                // if string is garbage and all strings after it are garbage then return i + 1
-                if self.garbage.string_pool.iter().any(|e| *e == i) {
-                    if i == 0 {
-                        return 0;
-                    }
-                    i -= 1;
-                } else {
-                    return i + 1;
-                }
-            }
-        }
-        fn last_obj(&mut self) -> usize {
-            if self.heap.is_empty() {
-                return 0;
-            }
-            // find first object that is garbage and following objects are garbage and dont remove any objects from garbage
-            let mut i = self.heap.len() - 1;
-            loop {
-                // if object is garbage and all objects after it are garbage then return i + 1
-                if self.garbage.heap.iter().any(|e| *e == i) {
-                    if i == 0 {
-                        return 0;
-                    }
-                    i -= 1;
-                } else {
-                    return i + 1;
-                }
-            }
-        }
-        fn deallocate_string(&mut self, idx: usize) -> bool {
-            if idx >= self.string_pool.len() {
-                return false;
-            }
-            if idx == self.string_pool.len() - 1 {
-                self.string_pool.pop();
-                // get largest index of non garbage string and truncate
-                let last = self.last_string();
-                self.string_pool.truncate(last);
-                return true;
-            }
-            self.garbage.string_pool.push(idx);
-            self.string_pool[idx].clear();
-            true
-        }
-        fn resize_obj(&mut self, heap_idx: usize, new_size: usize) {
-            self.heap[heap_idx].resize(new_size, Types::Null)
-        }
-        /// GC
-        pub fn sweep(&mut self) {
-            let marked = self.mark();
-            self.sweep_marked(marked);
-        }
-        pub fn sweep_unoptimized(&mut self) {
-            let marked = self.mark_unoptimized();
-            self.sweep_marked(marked);
-        }
-        fn sweep_marked(&mut self, marked: (Vec<bool>, Vec<bool>)) {
-            self.sweep_marked_obj(marked.0);
-            self.sweep_marked_string(marked.1);
-            let last = self.last_string();
-            self.string_pool.truncate(last);
-            let last = self.last_obj();
-            self.heap.truncate(last);
-        }
-        fn sweep_marked_obj(&mut self, marked: Vec<bool>) {
-            if let Some(idx) = marked.iter().rposition(|x| !*x) {
-                self.heap.truncate(idx + 1);
-            } else {
-                self.heap.clear();
-                return;
-            }
-            for (i, mark) in marked.iter().enumerate() {
-                if i == self.heap.len() {
-                    return;
-                }
-                if *mark {
-                    self.heap[i].clear();
-                    if !self.garbage.heap.contains(&i) {
-                        self.garbage.heap.push(i);
-                    }
-                }
-            }
-        }
-        fn sweep_marked_string(&mut self, marked: Vec<bool>) {
-            // find first string that is garbage and following strings are garbage and then remove them from garbage
-            if let Some(idx) = marked.iter().rposition(|x| !*x) {
-                self.string_pool.truncate(idx + 1);
-            } else {
-                self.string_pool.clear();
-                return;
-            }
-            // remove all strings that are marked
-            for (i, mark) in marked.iter().enumerate() {
-                if i == self.string_pool.len() {
-                    continue;
-                }
-                if *mark {
-                    self.string_pool[i].clear();
-                    if !self.garbage.string_pool.contains(&i) {
-                        self.garbage.string_pool.push(i);
-                    }
-                }
-            }
-        }
-        fn mark_unoptimized(&mut self) -> (Vec<bool>, Vec<bool>) {
-            let mut marked_obj = Vec::new();
-            let mut marked_str = Vec::new();
-            marked_obj.resize(self.heap.len(), true);
-            marked_str.resize(self.string_pool.len(), true);
-            self.mark_registers(&mut marked_obj, &mut marked_str);
-            self.mark_range((0, self.stack.len()), &mut marked_obj, &mut marked_str);
-            (marked_obj, marked_str)
-        }
-        fn mark(&mut self) -> (Vec<bool>, Vec<bool>) {
-            let mut call_stack_idx = 1;
-            let mut marked = Vec::new();
-            let mut marked_str = Vec::new();
-            marked.resize(self.heap.len(), true);
-            marked_str.resize(self.string_pool.len(), true);
-            self.mark_registers(&mut marked, &mut marked_str);
-            while call_stack_idx <= self.stack_ptr {
-                let cs = self.call_stack[call_stack_idx];
-                let prev_cs = self.call_stack[call_stack_idx - 1];
-                self.mark_range(
-                    (prev_cs.end, prev_cs.end + cs.pointers_len),
-                    &mut marked,
-                    &mut marked_str,
-                );
-                call_stack_idx += 1;
-            }
-            (marked, marked_str)
-        }
-        fn mark_obj(&mut self, obj_idx: usize, marked: &mut Vec<bool>) {
-            if !marked[obj_idx] {
-                return;
-            }
-            marked[obj_idx] = false;
-            for idx in 0..self.heap[obj_idx].len() {
-                let member = self.heap[obj_idx][idx];
-                if let Types::Pointer(u_size, PointerTypes::Object) = member {
-                    self.mark_obj(u_size, marked);
-                } else if let Types::Pointer(u_size, PointerTypes::Heap(_)) = member {
-                    self.mark_obj(u_size, marked);
-                }
-            }
-        }
-        fn mark_string(&mut self, str_idx: usize, marked: &mut Vec<bool>) {
-            marked[str_idx] = false;
-        }
-        fn mark_range(
-            &mut self,
-            range: (usize, usize),
-            marked_obj: &mut Vec<bool>,
-            marked_string: &mut Vec<bool>,
-        ) {
-            for idx in range.0..range.1 {
-                if let Types::Pointer(u_size, PointerTypes::Heap(_)) = self.stack[idx] {
-                    self.mark_obj(u_size, marked_obj);
-                } else if let Types::Pointer(u_size, PointerTypes::Object) = self.stack[idx] {
-                    self.mark_obj(u_size, marked_obj);
-                } else if let Types::Pointer(u_size, PointerTypes::String) = self.stack[idx] {
-                    self.mark_string(u_size, marked_string);
-                }
-            }
-        }
-        fn mark_registers(&mut self, marked: &mut Vec<bool>, marked_str: &mut Vec<bool>) {
-            for reg in self.registers {
-                if let Types::Pointer(u_size, PointerTypes::Heap(_)) = reg {
-                    self.mark_obj(u_size, marked);
-                } else if let Types::Pointer(u_size, PointerTypes::Object) = reg {
-                    self.mark_obj(u_size, marked);
-                } else if let Types::Pointer(u_size, PointerTypes::String) = reg {
-                    self.mark_string(u_size, marked_str);
-                }
-            }
-        }
         fn stack_end(&self) -> usize {
-            self.call_stack[self.stack_ptr].end
+            self.memory.stack.call_stack[self.memory.stack.ptr].end
         }
         fn next_line(&mut self) {
-            self.code_ptr += 1;
+            self.code.ptr += 1;
         }
         fn cast(registers: &mut Registers, reg1: usize, reg2: usize) -> Result<bool, ErrTypes> {
             match registers[reg1] {
@@ -1223,48 +1042,6 @@ pub mod runtime {
             }
             Ok(true)
         }
-        /// Creates a new empty string and returns the location of the string
-        pub fn str_new(&mut self) -> usize {
-            // either push a new string or occupy a deleted string
-            if let Some(loc) = self.garbage.string_pool.pop() {
-                self.string_pool[loc] = Vec::new();
-                loc
-            } else {
-                self.string_pool.push(Vec::new());
-                self.string_pool.len() - 1
-            }
-        }
-        ///  Creates a new copied string and returns the location of the string
-        pub fn str_from(&mut self, str: Vec<char>) -> usize {
-            // either push a new string or occupy a deleted string
-            if let Some(loc) = self.garbage.string_pool.pop() {
-                self.string_pool[loc] = str;
-                loc
-            } else {
-                self.string_pool.push(str);
-                self.string_pool.len() - 1
-            }
-        }
-        /// Copies a string from one location to a new location and returns the new location
-        pub fn str_copy(&mut self, loc: usize) -> usize {
-            // either push a new string or occupy a deleted string
-            if let Some(new_loc) = self.garbage.string_pool.pop() {
-                self.string_pool[new_loc] = self.string_pool[loc].clone();
-                new_loc
-            } else {
-                self.string_pool.push(self.string_pool[loc].clone());
-                self.string_pool.len() - 1
-            }
-        }
-        /// Copies a string from one location to another location.
-        pub fn str_copy_from(&mut self, orig: usize, dest: usize) {
-            self.string_pool[dest] = self.string_pool[orig].clone()
-        }
-        pub fn str_concat(&mut self, left: usize, right: usize) -> usize {
-            let mut temp = self.string_pool[left].clone();
-            temp.extend(self.string_pool[right].iter());
-            self.str_from(temp)
-        }
         pub fn data_report(&self, runtime: Option<u128>) {
             use colored::Colorize;
             use enable_ansi_support::enable_ansi_support;
@@ -1275,11 +1052,10 @@ pub mod runtime {
                     if let Some(time) = runtime {
                         println!("\x1b[90mTotal run time: {} ms\x1b[0m", time);
                     }
-                    println!("{} {:?}", "Heap:".magenta(), self.heap);
-                    println!("{} {:?}", "Stack:".magenta(), self.stack);
-                    println!("{} {:?}", "Registers:".magenta(), self.registers);
-                    println!("{} {:?}", "Strings:".magenta(), self.string_pool);
-                    println!("{} {:?}", "Garbage:".magenta(), self.garbage);
+                    println!("{} {:?}", "Heap:".magenta(), self.memory.heap.data);
+                    println!("{} {:?}", "Stack:".magenta(), self.memory.stack.data);
+                    println!("{} {:?}", "Registers:".magenta(), self.memory.registers);
+                    println!("{} {:?}", "Strings:".magenta(), self.memory.strings.pool);
                 }
                 Err(_) => {
                     print!("\n");
@@ -1287,11 +1063,10 @@ pub mod runtime {
                     if let Some(time) = runtime {
                         println!("Total run time: {} ms", time);
                     }
-                    println!("{} {:?}", "Heap:", self.heap);
-                    println!("{} {:?}", "Stack:", self.stack);
-                    println!("{} {:?}", "Registers:", self.registers);
-                    println!("{} {:?}", "Strings:", self.string_pool);
-                    println!("{} {:?}", "Garbage:", self.garbage);
+                    println!("{} {:?}", "Heap:", self.memory.heap.data);
+                    println!("{} {:?}", "Stack:", self.memory.stack.data);
+                    println!("{} {:?}", "Registers:", self.memory.registers);
+                    println!("{} {:?}", "Strings:", self.memory.strings.pool);
                 }
             }
         }
@@ -1299,8 +1074,8 @@ pub mod runtime {
             if self.enter_panic() {
                 return true;
             }
-            self.break_code = Some(self.code_ptr);
-            print_message(&kind, Some((self.code_ptr, 0)));
+            self.break_code = Some(self.code.ptr);
+            print_message(&kind, Some((self.code.ptr, 0)));
             self.exit_code = ExitCodes::Internal(kind);
             false
         }
@@ -1317,16 +1092,16 @@ pub mod runtime {
                 }
                 i -= 1;
                 if let Some(n) = self.catches.cache[i].id {
-                    if let Types::NonPrimitive(e_type) = self.registers[RETURN_REG] {
+                    if let Types::NonPrimitive(e_type) = self.memory.registers[RETURN_REG] {
                         if n == e_type {
-                            self.code_ptr = self.catches.cache[i].code_ptr;
-                            self.stack_ptr = self.catches.cache[i].cs_ptr;
+                            self.code.ptr = self.catches.cache[i].code_ptr;
+                            self.memory.stack.ptr = self.catches.cache[i].cs_ptr;
                         }
                     }
                     break;
                 } else {
-                    self.code_ptr = self.catches.cache[i].code_ptr;
-                    self.stack_ptr = self.catches.cache[i].cs_ptr;
+                    self.code.ptr = self.catches.cache[i].code_ptr;
+                    self.memory.stack.ptr = self.catches.cache[i].cs_ptr;
                     break;
                 }
             }
@@ -1349,29 +1124,299 @@ pub mod runtime {
         /// context for a single thread of execution (may include multiple threads in future updates)
         /// this is the main struct that holds all the data for the runtime
         pub struct Context {
-            pub stack: Vec<Types>,
-            pub call_stack: [CallStack; CALL_STACK_SIZE],
-            pub stack_ptr: usize,
-            pub registers: Registers,
-            pub code: Vec<Instructions>,
-            pub code_ptr: usize,
-            pub garbage: Garbage,
-            pub heap: Vec<Vec<Types>>,
-            pub string_pool: Vec<Vec<char>>,
-            pub non_primitives: Vec<NonPrimitiveType>,
+            pub memory: Memory,
+            pub code: Code,
             pub break_code: Option<usize>,
             pub catches: Catches,
             pub exit_code: ExitCodes,
             pub libs: Vec<Box<dyn Library>>,
         }
+        pub struct Memory {
+            pub stack: Stack,
+            pub registers: Registers,
+            pub heap: Heap,
+            pub strings: Strings,
+            pub non_primitives: Vec<NonPrimitiveType>,
+        }
+        impl Memory {
+            // allocator starts here
+            pub fn allocate_obj(&mut self, size: usize) -> usize {
+                let mut data = Vec::new();
+                data.resize(size, Types::Null);
+                if let Some(idx) = self.heap.garbage.pop() {
+                    self.heap.data[idx] = data;
+                    return idx;
+                }
+                self.heap.data.push(data);
+                self.heap.data.len() - 1
+            }
+            pub fn deallocate_obj(&mut self, idx: usize) -> bool {
+                if idx >= self.heap.data.len() {
+                    return false;
+                }
+                if idx == self.heap.data.len() - 1 {
+                    self.heap.data.pop();
+                    // get largest index of non garbage obj using last obj and truncate
+                    let last = self.last_obj();
+                    self.heap.data.truncate(last);
+                    return true;
+                }
+                self.heap.garbage.push(idx);
+                self.heap.data[idx].clear();
+                true
+            }
+            pub fn last_string(&mut self) -> usize {
+                if self.strings.pool.is_empty() {
+                    return 0;
+                }
+                // find first string that is garbage and following strings are garbage and dont remove any strings from garbage
+                let mut i = self.strings.pool.len() - 1;
+                loop {
+                    // if string is garbage and all strings after it are garbage then return i + 1
+                    if self.strings.garbage.iter().any(|e| *e == i) {
+                        if i == 0 {
+                            return 0;
+                        }
+                        i -= 1;
+                    } else {
+                        return i + 1;
+                    }
+                }
+            }
+            pub fn last_obj(&mut self) -> usize {
+                if self.heap.data.is_empty() {
+                    return 0;
+                }
+                // find first object that is garbage and following objects are garbage and dont remove any objects from garbage
+                let mut i = self.heap.data.len() - 1;
+                loop {
+                    // if object is garbage and all objects after it are garbage then return i + 1
+                    if self.heap.garbage.iter().any(|e| *e == i) {
+                        if i == 0 {
+                            return 0;
+                        }
+                        i -= 1;
+                    } else {
+                        return i + 1;
+                    }
+                }
+            }
+            pub fn deallocate_string(&mut self, idx: usize) -> bool {
+                if idx >= self.strings.pool.len() {
+                    return false;
+                }
+                if idx == self.strings.pool.len() - 1 {
+                    self.strings.pool.pop();
+                    // get largest index of non garbage string and truncate
+                    let last = self.last_string();
+                    self.strings.pool.truncate(last);
+                    return true;
+                }
+                self.strings.garbage.push(idx);
+                self.strings.pool[idx].clear();
+                true
+            }
+            pub fn resize_obj(&mut self, heap_idx: usize, new_size: usize) {
+                self.heap.data[heap_idx].resize(new_size, Types::Null)
+            }
+            /// GC
+            pub fn sweep(&mut self) {
+                let marked = self.mark();
+                self.sweep_marked(marked);
+            }
+            pub fn sweep_unoptimized(&mut self) {
+                let marked = self.mark_unoptimized();
+                self.sweep_marked(marked);
+            }
+            pub fn sweep_marked(&mut self, marked: (Vec<bool>, Vec<bool>)) {
+                self.sweep_marked_obj(marked.0);
+                self.sweep_marked_string(marked.1);
+                let last = self.last_string();
+                self.strings.pool.truncate(last);
+                let last = self.last_obj();
+                self.heap.data.truncate(last);
+            }
+            pub fn sweep_marked_obj(&mut self, marked: Vec<bool>) {
+                if let Some(idx) = marked.iter().rposition(|x| !*x) {
+                    self.heap.data.truncate(idx + 1);
+                } else {
+                    self.heap.data.clear();
+                    return;
+                }
+                for (i, mark) in marked.iter().enumerate() {
+                    if i == self.heap.data.len() {
+                        return;
+                    }
+                    if *mark {
+                        self.heap.data[i].clear();
+                        if !self.heap.garbage.contains(&i) {
+                            self.heap.garbage.push(i);
+                        }
+                    }
+                }
+            }
+            pub fn sweep_marked_string(&mut self, marked: Vec<bool>) {
+                // find first string that is garbage and following strings are garbage and then remove them from garbage
+                if let Some(idx) = marked.iter().rposition(|x| !*x) {
+                    self.strings.pool.truncate(idx + 1);
+                } else {
+                    self.strings.pool.clear();
+                    return;
+                }
+                // remove all strings that are marked
+                for (i, mark) in marked.iter().enumerate() {
+                    if i == self.strings.pool.len() {
+                        continue;
+                    }
+                    if *mark {
+                        self.strings.pool[i].clear();
+                        if !self.strings.garbage.contains(&i) {
+                            self.strings.garbage.push(i);
+                        }
+                    }
+                }
+            }
+            pub fn mark_unoptimized(&mut self) -> (Vec<bool>, Vec<bool>) {
+                let mut marked_obj = Vec::new();
+                let mut marked_str = Vec::new();
+                marked_obj.resize(self.heap.data.len(), true);
+                marked_str.resize(self.strings.pool.len(), true);
+                self.mark_registers(&mut marked_obj, &mut marked_str);
+                self.mark_range((0, self.stack.data.len()), &mut marked_obj, &mut marked_str);
+                (marked_obj, marked_str)
+            }
+            pub fn mark(&mut self) -> (Vec<bool>, Vec<bool>) {
+                let mut call_stack_idx = 1;
+                let mut marked = Vec::new();
+                let mut marked_str = Vec::new();
+                marked.resize(self.heap.data.len(), true);
+                marked_str.resize(self.strings.pool.len(), true);
+                self.mark_registers(&mut marked, &mut marked_str);
+                while call_stack_idx <= self.stack.ptr {
+                    let cs = self.stack.call_stack[call_stack_idx];
+                    let prev_cs = self.stack.call_stack[call_stack_idx - 1];
+                    self.mark_range(
+                        (prev_cs.end, prev_cs.end + cs.pointers_len),
+                        &mut marked,
+                        &mut marked_str,
+                    );
+                    call_stack_idx += 1;
+                }
+                (marked, marked_str)
+            }
+            pub fn mark_obj(&mut self, obj_idx: usize, marked: &mut Vec<bool>) {
+                if !marked[obj_idx] {
+                    return;
+                }
+                marked[obj_idx] = false;
+                for idx in 0..self.heap.data[obj_idx].len() {
+                    let member = self.heap.data[obj_idx][idx];
+                    if let Types::Pointer(u_size, PointerTypes::Object) = member {
+                        self.mark_obj(u_size, marked);
+                    } else if let Types::Pointer(u_size, PointerTypes::Heap(_)) = member {
+                        self.mark_obj(u_size, marked);
+                    }
+                }
+            }
+            pub fn mark_string(&mut self, str_idx: usize, marked: &mut Vec<bool>) {
+                marked[str_idx] = false;
+            }
+            pub fn mark_range(
+                &mut self,
+                range: (usize, usize),
+                marked_obj: &mut Vec<bool>,
+                marked_string: &mut Vec<bool>,
+            ) {
+                for idx in range.0..range.1 {
+                    if let Types::Pointer(u_size, PointerTypes::Heap(_)) = self.stack.data[idx] {
+                        self.mark_obj(u_size, marked_obj);
+                    } else if let Types::Pointer(u_size, PointerTypes::Object) =
+                        self.stack.data[idx]
+                    {
+                        self.mark_obj(u_size, marked_obj);
+                    } else if let Types::Pointer(u_size, PointerTypes::String) =
+                        self.stack.data[idx]
+                    {
+                        self.mark_string(u_size, marked_string);
+                    }
+                }
+            }
+            pub fn mark_registers(&mut self, marked: &mut Vec<bool>, marked_str: &mut Vec<bool>) {
+                for reg in self.registers {
+                    if let Types::Pointer(u_size, PointerTypes::Heap(_)) = reg {
+                        self.mark_obj(u_size, marked);
+                    } else if let Types::Pointer(u_size, PointerTypes::Object) = reg {
+                        self.mark_obj(u_size, marked);
+                    } else if let Types::Pointer(u_size, PointerTypes::String) = reg {
+                        self.mark_string(u_size, marked_str);
+                    }
+                }
+            }
+        }
+        pub struct Stack {
+            pub data: Vec<Types>,
+            pub ptr: usize,
+            pub call_stack: [CallStack; CALL_STACK_SIZE],
+        }
+        pub struct Heap {
+            pub data: Vec<Vec<Types>>,
+            pub garbage: Vec<usize>,
+        }
+        pub struct Strings {
+            pub pool: Vec<Vec<char>>,
+            pub garbage: Vec<usize>,
+        }
+        impl Strings {
+            /// Creates a new empty string and returns the location of the string
+            pub fn new(&mut self) -> usize {
+                // either push a new string or occupy a deleted string
+                if let Some(loc) = self.garbage.pop() {
+                    self.pool[loc] = Vec::new();
+                    loc
+                } else {
+                    self.pool.push(Vec::new());
+                    self.pool.len() - 1
+                }
+            }
+            ///  Creates a new copied string and returns the location of the string
+            pub fn from(&mut self, str: Vec<char>) -> usize {
+                // either push a new string or occupy a deleted string
+                if let Some(loc) = self.garbage.pop() {
+                    self.pool[loc] = str;
+                    loc
+                } else {
+                    self.pool.push(str);
+                    self.pool.len() - 1
+                }
+            }
+            /// Copies a string from one location to a new location and returns the new location
+            pub fn copy(&mut self, loc: usize) -> usize {
+                // either push a new string or occupy a deleted string
+                if let Some(new_loc) = self.garbage.pop() {
+                    self.pool[new_loc] = self.pool[loc].clone();
+                    new_loc
+                } else {
+                    self.pool.push(self.pool[loc].clone());
+                    self.pool.len() - 1
+                }
+            }
+            /// Copies a string from one location to another location.
+            pub fn copy_from(&mut self, orig: usize, dest: usize) {
+                self.pool[dest] = self.pool[orig].clone()
+            }
+            pub fn concat(&mut self, left: usize, right: usize) -> usize {
+                let mut temp = self.pool[left].clone();
+                temp.extend(self.pool[right].iter());
+                self.from(temp)
+            }
+        }
+        pub struct Code {
+            pub data: Vec<Instructions>,
+            pub ptr: usize,
+        }
         pub struct PublicData<'a> {
-            pub stack: &'a mut Vec<Types>,
-            pub call_stack: &'a mut [CallStack; CALL_STACK_SIZE],
-            pub stack_ptr: usize,
-            pub registers: &'a mut Registers,
-            pub heap: &'a mut Vec<Vec<Types>>,
-            pub string_pool: &'a mut Vec<Vec<char>>,
-            pub non_primitives: &'a mut Vec<NonPrimitiveType>,
+            pub memory: &'a mut Memory,
+            pub code: &'a mut Code,
         }
         #[derive(Debug, Clone)]
         pub struct Garbage {
@@ -1436,7 +1481,10 @@ pub mod runtime {
             Bool(bool),
             Pointer(usize, PointerTypes),
             CodePointer(usize),
+            // null represents an empty value
             Null,
+            // void represents a value that is not meant to be used
+            Void,
             /// header for non-primitive types
             /// ID
             NonPrimitive(usize),
@@ -1484,6 +1532,7 @@ pub mod runtime {
                         Types::Pointer(_, _) => write!(f, "Pointer"),
                         Types::Usize(_) => write!(f, "Usize"),
                         Types::NonPrimitive(_) => write!(f, "Non-primitive"),
+                        Types::Void => write!(f, "Void"),
                     }
                 } else if f.sign_plus() {
                     match *self {
@@ -1499,6 +1548,7 @@ pub mod runtime {
                         Types::Pointer(loc, kind) => write!(f, "Pointer<{loc}, {kind}>"),
                         Types::Usize(num) => write!(f, "Usize<{num}>"),
                         Types::NonPrimitive(id) => write!(f, "Non-primitive<{id}>"),
+                        Types::Void => write!(f, "Void"),
                     }
                 } else {
                     match *self {
@@ -1512,6 +1562,7 @@ pub mod runtime {
                         Types::Pointer(loc, _) => write!(f, "{loc}"),
                         Types::Usize(num) => write!(f, "{num}"),
                         Types::NonPrimitive(id) => write!(f, "{id}"),
+                        Types::Void => write!(f, "Void"),
                     }
                 }
             }
@@ -1811,11 +1862,7 @@ pub mod runtime {
     pub trait Library {
         /// calls a function from the library with the given id and arguments and returns the result
         /// mem: (stack, heap, string pool)
-        fn call(
-            &mut self,
-            id: usize,
-            mem: PublicData,
-        ) -> Result<Types, ErrTypes>;
+        fn call(&mut self, id: usize, mem: PublicData) -> Result<Types, ErrTypes>;
         /// initializes the library
         fn init(&mut self, ctx: &mut Context) -> Result<Box<Self>, String>
         where
@@ -1826,7 +1873,7 @@ pub mod runtime {
         /// (name, id)
         /// name must be in the format of
         /// name: fun name<T>(args: T): T
-        /// 
+        ///
         /// this is only enforced by the compiler
         /// and not by the interpreter
         fn register(&self) -> Vec<(String, usize)>;

@@ -12,13 +12,13 @@ pub mod test {
         println!("Running test {test_id}");
         match test_id {
             0 => {
-                context.stack = vec![Int(0)];
-                context.code = vec![End];
+                context.memory.stack.data = vec![Int(0)];
+                context.code.data = vec![End];
                 true
             }
             // heap test
             1 => {
-                context.stack = vec![
+                context.memory.stack.data = vec![
                     Int(1),     // value to write
                     Null,       // pointer placeholder
                     Usize(5),   // size of object
@@ -26,7 +26,7 @@ pub mod test {
                     Usize(3),   // position of second value in object
                     Usize(4),   // new size for realloc
                 ];
-                context.code = vec![
+                context.code.data = vec![
                     // stack
                     Res(3, 0),
                     // allocating size Usize(5)
@@ -55,7 +55,7 @@ pub mod test {
             }
             // function swap
             2 => {
-                context.stack = vec![
+                context.memory.stack.data = vec![
                     Int(3), // value 1
                     Int(7), // value 2
                     Bool(true),
@@ -64,7 +64,7 @@ pub mod test {
                     Int(50), // max
                     Int(1),  // step
                 ];
-                context.code = vec![
+                context.code.data = vec![
                     Res(7, 0), // main stack
                     Goto(15),  // skip function declaration to the main code
                     // function swap stack[bool, (ptr, ptr), tmp] -> bool
@@ -107,7 +107,7 @@ pub mod test {
             }
             // function swap (optimized)
             3 => {
-                context.stack = vec![
+                context.memory.stack.data = vec![
                     Int(3),     // value 1
                     Int(7),     // value 2
                     Bool(true), // return value
@@ -115,7 +115,7 @@ pub mod test {
                     Int(50),    // max
                     Int(1),     // step
                 ];
-                context.code = vec![
+                context.code.data = vec![
                     Res(6, 0),
                     Goto(10),
                     // function swap registers[gen3: ptr, ptr:ptr]
@@ -148,7 +148,7 @@ pub mod test {
             }
             // memory goes brrrrrrrrr
             4 => {
-                context.stack = vec![
+                context.memory.stack.data = vec![
                     Pointer(1, PointerTypes::Object),
                     Usize(1), // size allocated on each iteration; low for safety measures
                     Int(0),   // index
@@ -156,7 +156,7 @@ pub mod test {
                     Int(300), // range
                     Null,     // placeholder for heap pointer
                 ];
-                context.code = vec![
+                context.code.data = vec![
                     Res(6, 1),
                     Rdc(1, GENERAL_REG2), // size
                     Alc(GENERAL_REG2),
@@ -182,8 +182,8 @@ pub mod test {
                 true
             }
             5 => {
-                context.stack = vec![Usize(1), Null, Int(70)];
-                context.code = vec![
+                context.memory.stack.data = vec![Usize(1), Null, Int(70)];
+                context.code.data = vec![
                     Res(3, 0),
                     Rd(3, GENERAL_REG1),
                     Alc(GENERAL_REG1),
@@ -216,8 +216,8 @@ pub mod test {
                 true
             }
             6 => {
-                context.stack = vec![Usize(1), Null, Int(70), Usize(0)];
-                context.code = vec![
+                context.memory.stack.data = vec![Usize(1), Null, Int(70), Usize(0)];
+                context.code.data = vec![
                     Res(3, 0),
                     Rdc(0, GENERAL_REG1),
                     Alc(GENERAL_REG1),
@@ -231,7 +231,7 @@ pub mod test {
                 true
             }
             7 => {
-                context.string_pool = vec![
+                context.memory.strings.pool = vec![
                     "Hello world\n".chars().collect(),
                     "Length of h.w. string is: ".chars().collect(),
                     "gzjkh".chars().collect(),
@@ -239,7 +239,7 @@ pub mod test {
                     "Jeff Bezos".chars().collect(),
                     ", his height is: ".chars().collect(),
                 ];
-                context.non_primitives = vec![
+                context.memory.non_primitives = vec![
                     // struct Person, 3 fields, name, age, height, id = 0
                     NonPrimitiveType {
                         name: "Person".to_string(),
@@ -250,7 +250,7 @@ pub mod test {
                         methods: vec![],
                     },
                 ];
-                context.heap = vec![
+                context.memory.heap.data = vec![
                     // struct Person, name = "Jeff Bezos", age = 20, height = 180
                     vec![
                         Types::NonPrimitive(0),
@@ -259,7 +259,7 @@ pub mod test {
                         Types::Int(180),
                     ],
                 ];
-                context.stack = vec![
+                context.memory.stack.data = vec![
                     Types::Pointer(0, PointerTypes::String),
                     Types::Pointer(1, PointerTypes::String),
                     Types::Pointer(3, PointerTypes::String),
@@ -267,7 +267,7 @@ pub mod test {
                     Types::Pointer(0, PointerTypes::Object),
                     Types::Pointer(5, PointerTypes::String),
                 ];
-                context.code = vec![
+                context.code.data = vec![
                     Rdc(0, GENERAL_REG1),
                     StdOut(GENERAL_REG1),
                     Rdc(1, GENERAL_REG1),
@@ -310,7 +310,7 @@ pub mod test {
                 // 0: drive (takes self, returns nothing)
                 // 1: stop (takes self, returns int)
 
-                context.non_primitives = vec![
+                context.memory.non_primitives = vec![
                     // struct car, 3 fields, brand name, is for sports, speed, id = 0
                     NonPrimitiveType {
                         name: "Car".to_string(),
@@ -337,7 +337,7 @@ pub mod test {
                         methods: vec![],
                     },
                 ];
-                context.string_pool = vec![
+                context.memory.strings.pool = vec![
                     "I am driving with ".chars().collect(),
                     "I am stopping with ".chars().collect(),
                     "BMW".chars().collect(),
@@ -346,7 +346,7 @@ pub mod test {
                     " at ".chars().collect(),
                     " km/h".chars().collect(),
                 ];
-                context.stack = vec![
+                context.memory.stack.data = vec![
                     // create a car
                     Types::NonPrimitive(0),
                     Types::Pointer(2, PointerTypes::String),
@@ -364,7 +364,7 @@ pub mod test {
                     Types::Pointer(5, PointerTypes::String), // string " at "
                     Types::Pointer(6, PointerTypes::String), // string " km/h"
                 ];
-                context.code = vec![
+                context.code.data = vec![
                     // allocate memory on stack for every initialized variable
                     // this marks the entry point of the program
                     Res(10, 0),
@@ -434,15 +434,19 @@ pub mod test {
             9 => {
                 context.libs = load_libs(vec!["io"]);
 
-                context.string_pool = vec![
+                context.memory.strings.pool = vec![
                     "Write something: ".chars().collect(),
                     "You wrote: ".chars().collect(),
+                    "hello file".chars().collect(),
+                    "bye file".chars().collect(),
                     ];
-                context.stack = vec![
+                context.memory.stack.data = vec![
                     Types::Pointer(0, PointerTypes::String),
                     Types::Pointer(1, PointerTypes::String),
+                    Types::Pointer(2, PointerTypes::String),
+                    Types::Pointer(3, PointerTypes::String),
                     ];
-                context.code = vec![
+                context.code.data = vec![
                     Rdc(0, POINTER_REG),
                     Cal(0, 1),
                     Cal(0, 2),
@@ -452,14 +456,24 @@ pub mod test {
                     Cal(0, 0),
                     Swap(GENERAL_REG1, POINTER_REG),
                     Cal(0, 0),
+                    // save it to file
+                    Move(RETURN_REG, GENERAL_REG1),
+                    Rdc(3, POINTER_REG),
+                    Cal(0, 4),
+                    // load file
+                    Rdc(2, POINTER_REG),
+                    Cal(0, 3),
+                    // print file contents
+                    Move(RETURN_REG, POINTER_REG),
+                    Cal(0, 1),
                     SweepUnoptimized,
                     End,
                 ];
                 true
             }
             _ => {
-                context.stack = vec![Int(0)];
-                context.code = vec![End];
+                context.memory.stack.data = vec![Int(0)];
+                context.code.data = vec![End];
                 println!("Test id: {test_id} not found.");
                 true
             }
@@ -483,6 +497,7 @@ pub mod test {
     }
     // returns path to standard library
     pub fn std_path(lib: &str) -> String {
-        format!("{}", STD.replace("{name}", lib))
+        let lib = format!("{}", STD.replace("{name}", lib));
+        lib
     }
 }

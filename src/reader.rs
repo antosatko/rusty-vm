@@ -20,7 +20,7 @@ pub mod reader {
         while reader.file.as_bytes()[reader.pos] != '?' as u8 {
             reader.push_instruction();
         }
-        reader.ctx.code.push(Instructions::End);
+        reader.ctx.code.data.push(Instructions::End);
         reader.ctx
     }
     impl Reader {
@@ -52,10 +52,10 @@ pub mod reader {
                 34 => {
                     for idx in self.read_str_range() {
                         self.ctx
-                            .stack
+                            .memory.stack.data
                             .push(Types::Char(self.file.as_bytes()[idx] as char));
                     }
-                    self.ctx.stack.push(Types::Char('\0'));
+                    self.ctx.memory.stack.data.push(Types::Char('\0'));
                     return;
                 }
                 72 => todo!("Types::Enum(self.read_unumber(2) as u8)"),
@@ -68,7 +68,7 @@ pub mod reader {
                     )
                 }
             };
-            self.ctx.stack.push(value);
+            self.ctx.memory.stack.data.push(value);
         }
         /// reads next instruction and pushes it to Context::code
         fn push_instruction(&mut self) {
@@ -114,7 +114,7 @@ pub mod reader {
                     )
                 }
             };
-            self.ctx.code.push(instruction);
+            self.ctx.code.data.push(instruction);
         }
         fn read_str_range(&mut self) -> std::ops::Range<usize> {
             let bytes = self.file.as_bytes();
