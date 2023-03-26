@@ -451,6 +451,7 @@ pub mod test {
                     Rdc(0, GENERAL_REG1),
                     StdOut(GENERAL_REG1),
                     Cal(0, 2),
+                    SweepUnoptimized,
                     End,
                 ];
                 true
