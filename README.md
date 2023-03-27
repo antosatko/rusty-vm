@@ -21,7 +21,7 @@ VM is located in /runtime/ folder, copy files ``cargo.toml`` and ``lib.rs`` to s
 
 Alternatively you can build dll and use its interface to run RDVM in your project.
 
-If you are interested in developing rust libraries, you do so after you setup cargo project refferencing RDVM
+If you are interested in developing rust libraries, you can do so after you setup cargo project refferencing RDVM
 and use its public trait. (more on that in libraries repository which is not public at the moment)
 
 ## Instructions
