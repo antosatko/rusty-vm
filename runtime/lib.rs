@@ -848,31 +848,6 @@ pub mod runtime {
                         Types::Pointer(self.memory.strings.new(), PointerTypes::String);
                     self.next_line();
                 }
-                StrCat(reg) => {
-                    if let Types::Pointer(left, PointerTypes::String) =
-                        self.memory.registers[POINTER_REG]
-                    {
-                        if let Types::Pointer(right, PointerTypes::String) =
-                            self.memory.registers[reg]
-                        {
-                            self.memory.registers[POINTER_REG] = Types::Pointer(
-                                self.memory.strings.concat(left, right),
-                                PointerTypes::String,
-                            );
-                        } else {
-                            return self.panic_rt(ErrTypes::Expected(
-                                Types::Pointer(0, PointerTypes::String),
-                                self.memory.registers[reg],
-                            ));
-                        }
-                    } else {
-                        return self.panic_rt(ErrTypes::Expected(
-                            Types::Pointer(0, PointerTypes::String),
-                            self.memory.registers[reg],
-                        ));
-                    }
-                    self.next_line();
-                }
                 IntoStr(reg) => {
                     match self.memory.registers[reg] {
                         Types::Bool(b) => {
@@ -1042,40 +1017,12 @@ pub mod runtime {
             }
             Ok(true)
         }
-        pub fn data_report(&self, runtime: Option<u128>) {
-            use colored::Colorize;
-            use enable_ansi_support::enable_ansi_support;
-            match enable_ansi_support() {
-                Ok(_) => {
-                    print!("\n");
-                    println!("{}", "Post-process data report.".yellow());
-                    if let Some(time) = runtime {
-                        println!("\x1b[90mTotal run time: {} ms\x1b[0m", time);
-                    }
-                    println!("{} {:?}", "Heap:".magenta(), self.memory.heap.data);
-                    println!("{} {:?}", "Stack:".magenta(), self.memory.stack.data);
-                    println!("{} {:?}", "Registers:".magenta(), self.memory.registers);
-                    println!("{} {:?}", "Strings:".magenta(), self.memory.strings.pool);
-                }
-                Err(_) => {
-                    print!("\n");
-                    println!("{}", "Post-process data report.");
-                    if let Some(time) = runtime {
-                        println!("Total run time: {} ms", time);
-                    }
-                    println!("{} {:?}", "Heap:", self.memory.heap.data);
-                    println!("{} {:?}", "Stack:", self.memory.stack.data);
-                    println!("{} {:?}", "Registers:", self.memory.registers);
-                    println!("{} {:?}", "Strings:", self.memory.strings.pool);
-                }
-            }
-        }
         fn panic_rt(&mut self, kind: ErrTypes) -> bool {
             if self.enter_panic() {
                 return true;
             }
             self.break_code = Some(self.code.ptr);
-            print_message(&kind, Some((self.code.ptr, 0)));
+            println!("{}", get_message(&kind, Some((self.code.ptr, 0))));
             self.exit_code = ExitCodes::Internal(kind);
             false
         }
@@ -1378,6 +1325,16 @@ pub mod runtime {
                     self.pool.len() - 1
                 }
             }
+            pub fn from_String(&mut self, str: String) -> usize {
+                // either push a new string or occupy a deleted string
+                if let Some(loc) = self.garbage.pop() {
+                    self.pool[loc] = str.chars().collect();
+                    loc
+                } else {
+                    self.pool.push(str.chars().collect());
+                    self.pool.len() - 1
+                }
+            }
             ///  Creates a new copied string and returns the location of the string
             pub fn from(&mut self, str: Vec<char>) -> usize {
                 // either push a new string or occupy a deleted string
@@ -1408,6 +1365,13 @@ pub mod runtime {
                 let mut temp = self.pool[left].clone();
                 temp.extend(self.pool[right].iter());
                 self.from(temp)
+            }
+            pub fn push_string_array(&mut self, arr: Vec<&str>) -> Vec<usize> {
+                let mut temp = Vec::with_capacity(arr.len());
+                for str in arr {
+                    temp.push(self.from_String(str.to_owned()));
+                }
+                temp
             }
             pub fn to_string(&self, loc: usize) -> String {
                 self.pool[loc].iter().collect()
@@ -1728,8 +1692,6 @@ pub mod runtime {
             StrNew,
             /// String copy: str_reg | copies string from reg(str_reg) to new string and stores pointer in reg(POINTER_REGISTER)
             StrCpy(usize),
-            /// String concat: val_reg | creates new string {reg(POINTER_REGISTER) + reg(value_reg)} and stores pointer in reg(POINTER_REG)
-            StrCat(usize),
             /// Into string: val_reg | converts value on reg(value_reg) to string and stores pointer in reg(POINTER_REG)
             IntoStr(usize),
             /// Standard out: val_reg | outputs value on reg(value_reg) to stdout
@@ -1790,7 +1752,6 @@ pub mod runtime {
                     Instructions::NPType(_, _) => "NonPrimitiveType",
                     Instructions::StrNew => "StringNew",
                     Instructions::StrCpy(_) => "StringCopy",
-                    Instructions::StrCat(_) => "StringConcat",
                     Instructions::StdOut(_) => "StandardOutput",
                     Instructions::Dalc => "Deallocate",
                     Instructions::IntoStr(_) => "IntoString",
@@ -1829,7 +1790,7 @@ pub mod runtime {
                 format!("\x1b[90mErr{err_no:03}\x1b[0m \x1b[91m{header}\x1b[0m\n\x1b[90mLocation unspecified.\x1b[0m")
             };
         }
-        pub fn print_message(kind: &ErrTypes, line: Option<(usize, usize)>) {
+        pub fn get_message(kind: &ErrTypes, line: Option<(usize, usize)>) -> String {
             let data = match &kind {
                 ErrTypes::CrossTypeOperation(var1, var2, instr) => (
                     format!("Operation '{instr}' failed: Cross-type operation {var1:+}, {var2:+}"),
@@ -1858,7 +1819,7 @@ pub mod runtime {
                 ErrTypes::Message(msg) => (msg.clone(), 8),
             };
             let message = gen_message(data.0, line, data.1);
-            println!("{message}");
+            message
         }
     }
     /// public interface for the library to be used by the interpreter and the compiler
@@ -1866,10 +1827,6 @@ pub mod runtime {
         /// calls a function from the library with the given id and arguments and returns the result
         /// mem: (stack, heap, string pool)
         fn call(&mut self, id: usize, mem: PublicData) -> Result<Types, ErrTypes>;
-        /// initializes the library
-        fn init(&mut self, ctx: &mut Context) -> Result<Box<Self>, String>
-        where
-            Self: Sized;
         /// returns the name of the library
         fn name(&self) -> String;
         /// returns the functions of the library

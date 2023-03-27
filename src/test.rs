@@ -1,12 +1,12 @@
 pub mod test {
-    use std::{cell::RefCell, mem};
+    use std::{mem};
 
     use crate::runtime::runtime::runtime_types::{Context, Instructions::*, Types::*, *};
     use libloading::Library;
 
     const STD: &str = "../rusty_standard_lib/{name}/target/debug/{name}.dll";
 
-    const ID: usize = 9;
+    const ID: usize = 10;
     pub fn test_init(id: Option<usize>, context: &mut Context) -> bool {
         let test_id = if let Some(num) = id { num } else { ID };
         println!("Running test {test_id}");
@@ -215,6 +215,7 @@ pub mod test {
                 ];
                 true
             }
+            // old version
             6 => {
                 context.memory.stack.data = vec![Usize(1), Null, Int(70), Usize(0)];
                 context.code.data = vec![
@@ -284,7 +285,7 @@ pub mod test {
                     Rdp(POINTER_REG),
                     // concat with ", his height is: "
                     Rdc(4, GENERAL_REG1),
-                    StrCat(GENERAL_REG1),
+                        //StrCat(GENERAL_REG1),
                     // store in general reg 3 for later use
                     Move(POINTER_REG, GENERAL_REG3),
                     // use idxk to get height
@@ -296,7 +297,7 @@ pub mod test {
                     IntoStr(GENERAL_REG1),
                     // swap with concatenated string
                     Swap(GENERAL_REG3, POINTER_REG),
-                    StrCat(GENERAL_REG3),
+                        //StrCat(GENERAL_REG3),
                     // print
                     StdOut(POINTER_REG),
                     End,
@@ -304,6 +305,7 @@ pub mod test {
                 true
             }
             // test for trait system
+            // old verison
             8 => {
                 // trait 0
                 // implements methods
@@ -409,15 +411,15 @@ pub mod test {
                     // cocnatenate what we have so far so we save space in registers
                     // get pointer to "I am driving with"
                     Rdc(9, POINTER_REG),
-                    StrCat(GENERAL_REG1),
+                        //StrCat(GENERAL_REG1),
                     // concatenate with " at "
                     Rdc(11, GENERAL_REG1),
-                    StrCat(GENERAL_REG1),
+                        //StrCat(GENERAL_REG1),
                     // concatenate with speed
-                    StrCat(GENERAL_REG2),
+                        //StrCat(GENERAL_REG2),
                     // concatenate with " km/h"
                     Rdc(12, GENERAL_REG1),
-                    StrCat(GENERAL_REG1),
+                        //StrCat(GENERAL_REG1),
                     StdOut(POINTER_REG),
                     // load return value into return register
                     Rd(1, POINTER_REG),
@@ -456,10 +458,10 @@ pub mod test {
                     Cal(0, 0),
                     Swap(GENERAL_REG1, POINTER_REG),
                     Cal(0, 0),
-                    // save it to file
+                    // append to file
                     Move(RETURN_REG, GENERAL_REG1),
                     Rdc(3, POINTER_REG),
-                    Cal(0, 4),
+                    Cal(0, 5),
                     // load file
                     Rdc(2, POINTER_REG),
                     Cal(0, 3),
@@ -469,6 +471,62 @@ pub mod test {
                     SweepUnoptimized,
                     End,
                 ];
+                true
+            }
+            10 => {
+                context.libs = load_libs(vec!["io"]);
+
+                context.memory.strings.pool = vec![
+                    ];
+                context.memory.stack.data = vec![
+                    Types::Null,     // args array
+                    Types::Usize(1), // idx
+                    Types::Usize(1), // step
+                    Types::Usize(1), // len
+                    ];
+                context.code.data = vec![
+                    Res(4, 0),
+                    // get args
+                    Cal(0, 11),
+                    Wr(4, RETURN_REG),
+                    Move(RETURN_REG, GENERAL_REG1),
+                    Len(RETURN_REG),
+                    Wr(1, RETURN_REG),
+                    // loop starts here
+                    // get idx
+                    Rd(3, GENERAL_REG1),
+                    // get len
+                    Rd(1, GENERAL_REG2),
+                    // compare
+                    Less,
+                    Brnc(10 /* another round */, 20 /* end of loop */),
+                    // loop body
+                    // get idx
+                    Rd(3, GENERAL_REG1),
+                    // get arg
+                    Rd(4, POINTER_REG),
+                    Idx(GENERAL_REG1),
+                    Rdp(POINTER_REG),
+                    // print arg
+                    Cal(0, 1),
+                    // increment idx
+                    Rd(3, GENERAL_REG1),
+                    Rd(2, GENERAL_REG2),
+                    Add,
+                    Wr(3, GENERAL_REG1),
+                    // loop ends here
+                    Goto(6),
+                    End,
+                ];
+                /* this would be an equivalent code in C
+                int main(int argc, char** argv) {
+                    // here we start from 0 because in our VM index(0) is for self so we have to skip it
+                    // but this is not the case in C
+                    for (int i = 0; i < argc; i++) {
+                        printf("%s\n", argv[i]);
+                    }
+                
+                 */
                 true
             }
             _ => {

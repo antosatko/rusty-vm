@@ -73,10 +73,6 @@ dependencies = [
 [[package]]
 name = "runtime"
 version = "0.1.0"
-dependencies = [
- "colored",
- "enable-ansi-support",
-]
 
 [[package]]
 name = "rusty_vm"

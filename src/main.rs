@@ -9,7 +9,7 @@ mod test;
 fn main() {
     let mut args = env::args();
     let mut report = true;
-    let mut ctx = match args.nth(1) {
+    /*let mut ctx = match args.nth(1) {
         Some(src) => read_file(src, Context::new()),
         None => {
             /*println!("Path not specified. Program will terminate."); return;*/
@@ -18,11 +18,13 @@ fn main() {
             report = test_init(None, &mut ctx);
             ctx
         }
-    };
+    };*/
+    let mut ctx = Context::new();
+    report = test::test::test_init(None, &mut ctx);
     let start_time = SystemTime::now();
     ctx.run();
     if report {
-        ctx.data_report(Some(
+        data_report(&ctx, Some(
             SystemTime::now()
                 .duration_since(start_time)
                 .unwrap()
@@ -30,4 +32,33 @@ fn main() {
         ));
     }
     ctx.libs.clear()
+}
+
+fn data_report(ctx: &Context, runtime: Option<u128>) {
+    use colored::Colorize;
+    use enable_ansi_support::enable_ansi_support;
+    match enable_ansi_support() {
+        Ok(_) => {
+            print!("\n");
+            println!("{}", "Post-process data report.".yellow());
+            if let Some(time) = runtime {
+                println!("\x1b[90mTotal run time: {} ms\x1b[0m", time);
+            }
+            println!("{} {:?}", "Heap:".magenta(), ctx.memory.heap.data);
+            println!("{} {:?}", "Stack:".magenta(), ctx.memory.stack.data);
+            println!("{} {:?}", "Registers:".magenta(), ctx.memory.registers);
+            println!("{} {:?}", "Strings:".magenta(), ctx.memory.strings.pool);
+        }
+        Err(_) => {
+            print!("\n");
+            println!("{}", "Post-process data report.");
+            if let Some(time) = runtime {
+                println!("Total run time: {} ms", time);
+            }
+            println!("{} {:?}", "Heap:", ctx.memory.heap.data);
+            println!("{} {:?}", "Stack:", ctx.memory.stack.data);
+            println!("{} {:?}", "Registers:", ctx.memory.registers);
+            println!("{} {:?}", "Strings:", ctx.memory.strings.pool);
+        }
+    }
 }
