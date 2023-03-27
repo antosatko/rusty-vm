@@ -1,4 +1,5 @@
 # Rusty Danda vm
+<a><img src="logo.png" align="middle" height="256" width="256" ></a>
 
 ## About
 
