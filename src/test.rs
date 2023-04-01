@@ -270,9 +270,9 @@ pub mod test {
                 ];
                 context.code.data = vec![
                     Rdc(0, GENERAL_REG1),
-                    StdOut(GENERAL_REG1),
+                        //StdOut(GENERAL_REG1),
                     Rdc(1, GENERAL_REG1),
-                    StdOut(GENERAL_REG1),
+                        //StdOut(GENERAL_REG1),
                     Rdc(0, GENERAL_REG1),
                     Move(GENERAL_REG1, POINTER_REG),
                     Len(GENERAL_REG1),
@@ -299,7 +299,7 @@ pub mod test {
                     Swap(GENERAL_REG3, POINTER_REG),
                         //StrCat(GENERAL_REG3),
                     // print
-                    StdOut(POINTER_REG),
+                        //StdOut(POINTER_REG),
                     End,
                 ];
                 true
@@ -420,7 +420,7 @@ pub mod test {
                     // concatenate with " km/h"
                     Rdc(12, GENERAL_REG1),
                         //StrCat(GENERAL_REG1),
-                    StdOut(POINTER_REG),
+                        //StdOut(POINTER_REG),
                     // load return value into return register
                     Rd(1, POINTER_REG),
                     IdxK(2),
@@ -428,7 +428,7 @@ pub mod test {
                     Ret,
                     // method stop for car
                     Rdc(1, GENERAL_REG1),
-                    StdOut(GENERAL_REG1),
+                        //StdOut(GENERAL_REG1),
                     Ret,
                 ];
                 true

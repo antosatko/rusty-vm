@@ -857,26 +857,6 @@ pub mod runtime {
                     );
                     self.next_line();
                 }
-                StdOut(reg) => {
-                    match self.memory.registers[reg] {
-                        Types::Pointer(u_size, kind) => match kind {
-                            PointerTypes::String => {
-                                let mut temp = String::new();
-                                for chr in &self.memory.strings.pool[u_size] {
-                                    temp.push(*chr);
-                                }
-                                print!("{temp}");
-                            }
-                            _ => {
-                                unreachable!("StdOut: Invalid pointer type");
-                            }
-                        },
-                        _ => {
-                            unreachable!("StdOut: Invalid type");
-                        }
-                    }
-                    self.next_line()
-                }
                 Panic => {
                     self.enter_panic();
                     self.next_line();
@@ -1677,8 +1657,6 @@ pub mod runtime {
             StrCpy(usize),
             /// Into string: val_reg | converts value on reg(value_reg) to string and stores pointer in reg(POINTER_REG)
             IntoStr(usize),
-            /// Standard out: val_reg | outputs value on reg(value_reg) to stdout
-            StdOut(usize),
         }
         impl fmt::Display for Instructions {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -1735,7 +1713,6 @@ pub mod runtime {
                     Instructions::NPType(_, _) => "NonPrimitiveType",
                     Instructions::StrNew => "StringNew",
                     Instructions::StrCpy(_) => "StringCopy",
-                    Instructions::StdOut(_) => "StandardOutput",
                     Instructions::Dalc => "Deallocate",
                     Instructions::IntoStr(_) => "IntoString",
                 };
