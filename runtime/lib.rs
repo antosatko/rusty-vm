@@ -849,50 +849,12 @@ pub mod runtime {
                     self.next_line();
                 }
                 IntoStr(reg) => {
-                    match self.memory.registers[reg] {
-                        Types::Bool(b) => {
-                            self.memory.registers[POINTER_REG] = Types::Pointer(
-                                self.memory.strings.from(b.to_string().chars().collect()),
-                                PointerTypes::String,
-                            );
-                        }
-                        Types::Char(c) => {
-                            self.memory.registers[POINTER_REG] = Types::Pointer(
-                                self.memory.strings.from(vec![c]),
-                                PointerTypes::String,
-                            );
-                        }
-                        Types::Int(i) => {
-                            self.memory.registers[POINTER_REG] = Types::Pointer(
-                                self.memory.strings.from(i.to_string().chars().collect()),
-                                PointerTypes::String,
-                            );
-                        }
-                        Types::Float(f) => {
-                            self.memory.registers[POINTER_REG] = Types::Pointer(
-                                self.memory.strings.from(f.to_string().chars().collect()),
-                                PointerTypes::String,
-                            );
-                        }
-                        Types::Null => {
-                            self.memory.registers[POINTER_REG] = Types::Pointer(
-                                self.memory.strings.from("null".chars().collect()),
-                                PointerTypes::String,
-                            );
-                        }
-                        Types::NonPrimitive(kind) => {
-                            self.memory.registers[POINTER_REG] = Types::Pointer(
-                                self.memory.strings.from(kind.to_string().chars().collect()),
-                                PointerTypes::String,
-                            );
-                        }
-                        _ => {
-                            return self.panic_rt(ErrTypes::Expected(
-                                Types::Pointer(0, PointerTypes::String),
-                                self.memory.registers[reg],
-                            ));
-                        }
-                    }
+                    self.memory.registers[POINTER_REG] = Types::Pointer(
+                        self.memory
+                            .strings
+                            .from_String(self.memory.registers[reg].to_str(&self.memory)),
+                        PointerTypes::String,
+                    );
                     self.next_line();
                 }
                 StdOut(reg) => {
@@ -1463,6 +1425,27 @@ pub mod runtime {
                     return *chr;
                 }
                 unreachable!()
+            }
+            pub fn to_str(&self, mem: &Memory) -> String {
+                match *self {
+                    Types::Bool(b) => b.to_string(),
+                    Types::Char(c) => c.to_string(),
+                    Types::Int(i) => i.to_string(),
+                    Types::Float(f) => f.to_string(),
+                    Types::Null => "null".to_string(),
+                    Types::NonPrimitive(kind) => kind.to_string(),
+                    Types::Usize(val) => val.to_string(),
+                    Types::Byte(val) => val.to_string(),
+                    Types::Pointer(u_size, val) => match val {
+                        PointerTypes::Char(chr) => chr.to_string(),
+                        PointerTypes::Heap(idx) => mem.heap.data[u_size][idx].to_string(),
+                        PointerTypes::Object => mem.heap.data[u_size][0].to_string(),
+                        PointerTypes::Stack => mem.stack.data[u_size].to_string(),
+                        PointerTypes::String => mem.strings.to_string(u_size),
+                    },
+                    Types::CodePointer(val) => val.to_string(),
+                    Types::Void => "void".to_string(),
+                }
             }
         }
         #[derive(Clone, Copy, Debug)]
