@@ -13,7 +13,7 @@ If you want to use RDVM in your project, reffer to the main repository.
  - [x] exceptions system
  - [x] interface to develop libraries in Rust
  - [x] exit codes + interface for debuggers
- - [ ] standard library (io, string, thread, gc) - currently in development
+ - [x] standard library (io, string, thread, gc) - still in development tho
  - [ ] browser support
  
 ## How to use
