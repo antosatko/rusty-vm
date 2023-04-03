@@ -35,8 +35,8 @@ pub mod reader {
             self.pos += 1;
             let value = match self.file.as_bytes()[self.pos - 1] {
                 65 => {
-                    let bytes = self.read_bytes(8) as u32;
-                    let int = unsafe { std::mem::transmute::<u32, i32>(bytes) };
+                    let bytes = self.read_bytes(16) as u64;
+                    let int = unsafe { std::mem::transmute::<u64, i64>(bytes) };
                     Types::Int(int)
                 }
                 66 => {
@@ -44,7 +44,6 @@ pub mod reader {
                     let float = unsafe { std::mem::transmute::<u64, f64>(bytes) };
                     Types::Float(float)
                 }
-                67 => Types::Byte(self.read_unumber(2) as u8),
                 68 => Types::Char((self.read_unumber(2) as u8) as char),
                 69 => Types::Usize(self.read_unumber(32)),
                 70 => Types::Bool(self.read_unumber(1) != 0),

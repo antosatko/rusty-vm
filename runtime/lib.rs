@@ -454,7 +454,6 @@ pub mod runtime {
                     match self.memory.registers[GENERAL_REG1] {
                         Types::Int(num1) => operation!(Int, add, num1),
                         Types::Float(num1) => operation!(Float, add, num1),
-                        Types::Byte(num1) => operation!(Byte, add, num1),
                         Types::Usize(num1) => operation!(Usize, add, num1),
                         _ => {
                             return self.panic_rt(ErrTypes::WrongTypeOperation(
@@ -469,7 +468,6 @@ pub mod runtime {
                     match self.memory.registers[GENERAL_REG1] {
                         Types::Int(num1) => operation!(Int, sub, num1),
                         Types::Float(num1) => operation!(Float, sub, num1),
-                        Types::Byte(num1) => operation!(Byte, sub, num1),
                         Types::Usize(num1) => operation!(Usize, sub, num1),
                         _ => {
                             return self.panic_rt(ErrTypes::WrongTypeOperation(
@@ -484,7 +482,6 @@ pub mod runtime {
                     match self.memory.registers[GENERAL_REG1] {
                         Types::Int(num1) => operation!(Int, mul, num1),
                         Types::Float(num1) => operation!(Float, mul, num1),
-                        Types::Byte(num1) => operation!(Byte, mul, num1),
                         Types::Usize(num1) => operation!(Usize, mul, num1),
                         _ => {
                             return self.panic_rt(ErrTypes::WrongTypeOperation(
@@ -499,7 +496,6 @@ pub mod runtime {
                     match self.memory.registers[GENERAL_REG1] {
                         Types::Int(num1) => operation!(Int, div, num1),
                         Types::Float(num1) => operation!(Float, div, num1),
-                        Types::Byte(num1) => operation!(Byte, div, num1),
                         Types::Usize(num1) => operation!(Usize, div, num1),
                         _ => {
                             return self.panic_rt(ErrTypes::WrongTypeOperation(
@@ -514,7 +510,6 @@ pub mod runtime {
                     match self.memory.registers[GENERAL_REG1] {
                         Types::Int(num1) => operation!(Int, %, num1),
                         Types::Float(num1) => operation!(Float, %, num1),
-                        Types::Byte(num1) => operation!(Byte, %, num1),
                         Types::Usize(num1) => operation!(Usize, %, num1),
                         _ => {
                             return self.panic_rt(ErrTypes::WrongTypeOperation(
@@ -529,7 +524,6 @@ pub mod runtime {
                     match self.memory.registers[GENERAL_REG1] {
                         Types::Int(num1) => operation!(Int, eq, num1, bool),
                         Types::Float(num1) => operation!(Float, eq, num1, bool),
-                        Types::Byte(num1) => operation!(Byte, eq, num1, bool),
                         Types::Usize(num1) => operation!(Usize, eq, num1, bool),
                         Types::Pointer(num1, _) => operation!(ptr, eq, num1, bool),
                         Types::Bool(var1) => operation!(Bool, eq, var1, bool),
@@ -547,7 +541,6 @@ pub mod runtime {
                     match self.memory.registers[GENERAL_REG1] {
                         Types::Int(num1) => operation!(Int, gt, num1, bool),
                         Types::Float(num1) => operation!(Float, gt, num1, bool),
-                        Types::Byte(num1) => operation!(Byte, gt, num1, bool),
                         Types::Usize(num1) => operation!(Usize, gt, num1, bool),
                         Types::Char(char1) => operation!(Char, gt, char1, bool),
                         _ => {
@@ -563,7 +556,6 @@ pub mod runtime {
                     match self.memory.registers[GENERAL_REG1] {
                         Types::Int(num1) => operation!(Int, lt, num1, bool),
                         Types::Float(num1) => operation!(Float, lt, num1, bool),
-                        Types::Byte(num1) => operation!(Byte, lt, num1, bool),
                         Types::Usize(num1) => operation!(Usize, lt, num1, bool),
                         Types::Char(char1) => operation!(Char, lt, char1, bool),
                         _ => {
@@ -873,9 +865,6 @@ pub mod runtime {
         fn cast(registers: &mut Registers, reg1: usize, reg2: usize) -> Result<bool, ErrTypes> {
             match registers[reg1] {
                 Types::Bool(bol) => match registers[reg2] {
-                    Types::Byte(_) => {
-                        registers[reg1] = if bol { Types::Byte(1) } else { Types::Byte(0) }
-                    }
                     Types::Int(_) => {
                         registers[reg1] = if bol { Types::Int(1) } else { Types::Int(0) }
                     }
@@ -902,22 +891,7 @@ pub mod runtime {
                     }
                     _ => return Err(ErrTypes::ImplicitCast(registers[reg1], registers[reg2])),
                 },
-                Types::Byte(num) => match registers[reg2] {
-                    Types::Int(_) => registers[reg1] = Types::Int(num as i32),
-                    Types::Float(_) => registers[reg1] = Types::Float(num as f64),
-                    Types::Usize(_) => registers[reg1] = Types::Usize(num as usize),
-                    Types::Char(_) => registers[reg1] = Types::Char(num as char),
-                    Types::Bool(_) => {
-                        registers[reg1] = if num == 0 {
-                            Types::Bool(false)
-                        } else {
-                            Types::Bool(true)
-                        }
-                    }
-                    _ => return Err(ErrTypes::ImplicitCast(registers[reg1], registers[reg2])),
-                },
                 Types::Int(num) => match registers[reg2] {
-                    Types::Byte(_) => registers[reg1] = Types::Byte(num as u8),
                     Types::Float(_) => registers[reg1] = Types::Float(num as f64),
                     Types::Usize(_) => registers[reg1] = Types::Usize(num as usize),
                     Types::Bool(_) => {
@@ -930,8 +904,7 @@ pub mod runtime {
                     _ => return Err(ErrTypes::ImplicitCast(registers[reg1], registers[reg2])),
                 },
                 Types::Float(num) => match registers[reg2] {
-                    Types::Byte(_) => registers[reg1] = Types::Byte(num as u8),
-                    Types::Int(_) => registers[reg1] = Types::Int(num as i32),
+                    Types::Int(_) => registers[reg1] = Types::Int(num as i64),
                     Types::Usize(_) => registers[reg1] = Types::Usize(num as usize),
                     Types::Bool(_) => {
                         registers[reg1] = if num == 0f64 {
@@ -943,8 +916,7 @@ pub mod runtime {
                     _ => return Err(ErrTypes::ImplicitCast(registers[reg1], registers[reg2])),
                 },
                 Types::Usize(num) => match registers[reg2] {
-                    Types::Byte(_) => registers[reg1] = Types::Byte(num as u8),
-                    Types::Int(_) => registers[reg1] = Types::Int(num as i32),
+                    Types::Int(_) => registers[reg1] = Types::Int(num as i64),
                     Types::Float(_) => registers[reg1] = Types::Float(num as f64),
                     Types::Bool(_) => {
                         registers[reg1] = if num == 0 {
@@ -1382,11 +1354,10 @@ pub mod runtime {
         }
         #[derive(Clone, Copy, Debug)]
         pub enum Types {
-            Int(i32),
+            Int(i64),
             Float(f64),
             Usize(usize),
             Char(char),
-            Byte(u8),
             Bool(bool),
             Pointer(usize, PointerTypes),
             CodePointer(usize),
@@ -1397,6 +1368,9 @@ pub mod runtime {
             /// header for non-primitive types
             /// ID
             NonPrimitive(usize),
+        }
+        pub struct I {
+            i: u8,
         }
         impl Types {
             /// may panic, so use this only if you are 100% certain that you got a character
@@ -1415,7 +1389,6 @@ pub mod runtime {
                     Types::Null => "null".to_string(),
                     Types::NonPrimitive(kind) => kind.to_string(),
                     Types::Usize(val) => val.to_string(),
-                    Types::Byte(val) => val.to_string(),
                     Types::Pointer(u_size, val) => match val {
                         PointerTypes::Char(chr) => chr.to_string(),
                         PointerTypes::Heap(idx) => mem.heap.data[u_size][idx].to_string(),
@@ -1453,7 +1426,6 @@ pub mod runtime {
                 if f.alternate() {
                     match *self {
                         Types::Bool(_) => write!(f, "Bool"),
-                        Types::Byte(_) => write!(f, "Byte"),
                         Types::Char(_) => write!(f, "Char"),
                         Types::CodePointer(_) => write!(f, "CodePointer"),
                         Types::Float(_) => write!(f, "Float"),
@@ -1469,7 +1441,6 @@ pub mod runtime {
                         Types::Bool(bol) => {
                             write!(f, "Bool<{bol}>")
                         }
-                        Types::Byte(byte) => write!(f, "Byte<{byte}>"),
                         Types::Char(char) => write!(f, "Char<{char}>"),
                         Types::CodePointer(loc) => write!(f, "CodePointer<{loc}>"),
                         Types::Float(num) => write!(f, "Float<{num}>"),
@@ -1483,7 +1454,6 @@ pub mod runtime {
                 } else {
                     match *self {
                         Types::Bool(bol) => write!(f, "{bol}"),
-                        Types::Byte(byte) => write!(f, "{byte}"),
                         Types::Char(char) => write!(f, "{char}"),
                         Types::CodePointer(loc) => write!(f, "{loc}"),
                         Types::Float(num) => write!(f, "{num}"),
