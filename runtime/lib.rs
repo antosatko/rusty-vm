@@ -1227,6 +1227,7 @@ pub mod runtime {
             pub pool: Vec<Vec<char>>,
             pub garbage: Vec<usize>,
         }
+        #[allow(unused)]
         impl Strings {
             /// Creates a new empty string and returns the location of the string
             pub fn new(&mut self) -> usize {
