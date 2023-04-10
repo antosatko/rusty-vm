@@ -24,5 +24,5 @@ Alternatively you can build dll and use its interface to run RDVM in your projec
 If you are interested in developing rust libraries, you can do so after you setup cargo project refferencing RDVM
 and use its public trait. (more on that in libraries documentation, which is not public at the moment)
 
-## Instructions
+## Binary representation
 Since instructions change all the time I am not going to write them here, but you can check out the runtime source, where they are documented. Search for ``pub enum Instructions`` in ``runtime/lib.rs`` to learn about them or alternatively you can look at the implementation here ``match self.code.data[self.code.ptr]``.
