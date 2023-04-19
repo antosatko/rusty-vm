@@ -1,7 +1,7 @@
 pub mod test {
     use std::{mem};
 
-    use crate::runtime::runtime::runtime_types::{Context, Instructions::*, Types::*, *};
+    use crate::runtime::runtime_types::{Context, Instructions::*, Types::*, *};
     use libloading::Library;
 
     const STD: &str = "../rusty_standard_lib/{name}/target/debug/{name}.dll";
@@ -537,12 +537,12 @@ pub mod test {
             }
         }
     }
-    pub fn load_libs(libs: Vec<&str>) -> Vec<Box<dyn runtime::runtime::Library>> {
+    pub fn load_libs(libs: Vec<&str>) -> Vec<Box<dyn runtime::Library>> {
         let mut result = vec![];
 
         for lib_path in &libs {
             let lib = unsafe { Library::new(std_path(lib_path)).unwrap() };
-            let init_fn: libloading::Symbol<fn() -> Box<dyn runtime::runtime::Library>> =
+            let init_fn: libloading::Symbol<fn() -> Box<dyn runtime::Library>> =
                 unsafe { lib.get(b"init").unwrap() };
             let lib_box = init_fn();
 

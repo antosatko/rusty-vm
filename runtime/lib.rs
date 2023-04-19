@@ -1,4 +1,4 @@
-pub mod runtime {
+
     use std::ops::Add;
     use std::ops::Div;
     use std::ops::Mul;
@@ -1769,4 +1769,3 @@ pub mod runtime {
         /// and not by the interpreter
         fn register(&self) -> Vec<(String, usize)>;
     }
-}

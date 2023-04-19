@@ -1,5 +1,5 @@
 pub mod reader {
-    use crate::runtime::runtime::runtime_types::{self, Context, Instructions, Types};
+    use crate::runtime::runtime_types::{self, Context, Instructions, Types};
     use std::fs::File;
     use std::io::prelude::*;
     struct Reader {

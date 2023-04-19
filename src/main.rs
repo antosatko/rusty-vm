@@ -1,7 +1,7 @@
 use reader::reader::*;
 extern crate runtime;
-use runtime::runtime::runtime_types::*;
-use std::{env, time::SystemTime};
+use runtime::runtime_types::*;
+use std::{env, time::SystemTime, mem};
 
 mod reader;
 mod test;
@@ -31,7 +31,7 @@ fn main() {
                 .as_millis(),
         ));
     }
-    ctx.libs.clear()
+    ctx.libs.clear();
 }
 
 fn data_report(ctx: &Context, runtime: Option<u128>) {
