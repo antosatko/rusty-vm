@@ -363,11 +363,11 @@ impl Context {
                 self.next_line();
             }
             Sweep => {
-                self.memory.sweep();
+                self.memory.gc_sweep();
                 self.next_line();
             }
             SweepUnoptimized => {
-                self.memory.sweep_unoptimized();
+                self.memory.gc_sweep_unoptimized();
                 self.next_line();
             }
             Goto(pos) => {
@@ -964,15 +964,18 @@ impl Context {
 #[allow(unused)]
 pub mod runtime_types {
     pub const CALL_STACK_SIZE: usize = 256;
-    pub const FREEZED_REG_SIZE: usize = 3;
+    pub const FREEZED_REG_SIZE: usize = 6;
     pub type Registers = [Types; REGISTER_SIZE];
-    pub const REGISTER_SIZE: usize = 6;
+    pub const REGISTER_SIZE: usize = 9;
     pub const GENERAL_REG1: usize = 0;
     pub const GENERAL_REG2: usize = 1;
     pub const GENERAL_REG3: usize = 2;
-    pub const POINTER_REG: usize = 3;
-    pub const RETURN_REG: usize = 4;
-    pub const CODE_PTR_REG: usize = 5;
+    pub const GENERAL_REG4: usize = 3;
+    pub const GENERAL_REG5: usize = 4;
+    pub const GENERAL_REG6: usize = 5;
+    pub const POINTER_REG: usize = REGISTER_SIZE - 3;
+    pub const RETURN_REG: usize = REGISTER_SIZE - 2;
+    pub const CODE_PTR_REG: usize = REGISTER_SIZE - 1;
     /// context for a single thread of execution (may include multiple threads in future updates)
     /// this is the main struct that holds all the data for the runtime
     pub struct Context {
@@ -1072,23 +1075,23 @@ pub mod runtime_types {
             self.heap.data[heap_idx].resize(new_size, Types::Null)
         }
         /// GC
-        pub fn sweep(&mut self) {
-            let marked = self.mark();
-            self.sweep_marked(marked);
+        pub fn gc_sweep(&mut self) {
+            let marked = self.gc_mark();
+            self.gc_sweep_marked(marked);
         }
-        pub fn sweep_unoptimized(&mut self) {
-            let marked = self.mark_unoptimized();
-            self.sweep_marked(marked);
+        pub fn gc_sweep_unoptimized(&mut self) {
+            let marked = self.gc_mark_unoptimized();
+            self.gc_sweep_marked(marked);
         }
-        pub fn sweep_marked(&mut self, marked: (Vec<bool>, Vec<bool>)) {
-            self.sweep_marked_obj(marked.0);
-            self.sweep_marked_string(marked.1);
+        pub fn gc_sweep_marked(&mut self, marked: (Vec<bool>, Vec<bool>)) {
+            self.gc_sweep_marked_obj(marked.0);
+            self.gc_sweep_marked_string(marked.1);
             let last = self.last_string();
             self.strings.pool.truncate(last);
             let last = self.last_obj();
             self.heap.data.truncate(last);
         }
-        pub fn sweep_marked_obj(&mut self, marked: Vec<bool>) {
+        pub fn gc_sweep_marked_obj(&mut self, marked: Vec<bool>) {
             if let Some(idx) = marked.iter().rposition(|x| !*x) {
                 self.heap.data.truncate(idx + 1);
             } else {
@@ -1107,7 +1110,7 @@ pub mod runtime_types {
                 }
             }
         }
-        pub fn sweep_marked_string(&mut self, marked: Vec<bool>) {
+        pub fn gc_sweep_marked_string(&mut self, marked: Vec<bool>) {
             // find first string that is garbage and following strings are garbage and then remove them from garbage
             if let Some(idx) = marked.iter().rposition(|x| !*x) {
                 self.strings.pool.truncate(idx + 1);
@@ -1128,26 +1131,26 @@ pub mod runtime_types {
                 }
             }
         }
-        pub fn mark_unoptimized(&mut self) -> (Vec<bool>, Vec<bool>) {
+        pub fn gc_mark_unoptimized(&mut self) -> (Vec<bool>, Vec<bool>) {
             let mut marked_obj = Vec::new();
             let mut marked_str = Vec::new();
             marked_obj.resize(self.heap.data.len(), true);
             marked_str.resize(self.strings.pool.len(), true);
-            self.mark_registers(&mut marked_obj, &mut marked_str);
-            self.mark_range((0, self.stack.data.len()), &mut marked_obj, &mut marked_str);
+            self.gc_mark_registers(&mut marked_obj, &mut marked_str);
+            self.gc_mark_range((0, self.stack.data.len()), &mut marked_obj, &mut marked_str);
             (marked_obj, marked_str)
         }
-        pub fn mark(&mut self) -> (Vec<bool>, Vec<bool>) {
+        pub fn gc_mark(&mut self) -> (Vec<bool>, Vec<bool>) {
             let mut call_stack_idx = 1;
             let mut marked = Vec::new();
             let mut marked_str = Vec::new();
             marked.resize(self.heap.data.len(), true);
             marked_str.resize(self.strings.pool.len(), true);
-            self.mark_registers(&mut marked, &mut marked_str);
+            self.gc_mark_registers(&mut marked, &mut marked_str);
             while call_stack_idx <= self.stack.ptr {
                 let cs = self.stack.call_stack[call_stack_idx];
                 let prev_cs = self.stack.call_stack[call_stack_idx - 1];
-                self.mark_range(
+                self.gc_mark_range(
                     (prev_cs.end, prev_cs.end + cs.pointers_len),
                     &mut marked,
                     &mut marked_str,
@@ -1156,7 +1159,7 @@ pub mod runtime_types {
             }
             (marked, marked_str)
         }
-        pub fn mark_obj(&mut self, obj_idx: usize, marked: &mut Vec<bool>) {
+        pub fn gc_mark_obj(&mut self, obj_idx: usize, marked: &mut Vec<bool>) {
             if !marked[obj_idx] {
                 return;
             }
@@ -1164,16 +1167,16 @@ pub mod runtime_types {
             for idx in 0..self.heap.data[obj_idx].len() {
                 let member = self.heap.data[obj_idx][idx];
                 if let Types::Pointer(u_size, PointerTypes::Object) = member {
-                    self.mark_obj(u_size, marked);
+                    self.gc_mark_obj(u_size, marked);
                 } else if let Types::Pointer(u_size, PointerTypes::Heap(_)) = member {
-                    self.mark_obj(u_size, marked);
+                    self.gc_mark_obj(u_size, marked);
                 }
             }
         }
-        pub fn mark_string(&mut self, str_idx: usize, marked: &mut Vec<bool>) {
+        pub fn gc_mark_string(&mut self, str_idx: usize, marked: &mut Vec<bool>) {
             marked[str_idx] = false;
         }
-        pub fn mark_range(
+        pub fn gc_mark_range(
             &mut self,
             range: (usize, usize),
             marked_obj: &mut Vec<bool>,
@@ -1181,22 +1184,22 @@ pub mod runtime_types {
         ) {
             for idx in range.0..range.1 {
                 if let Types::Pointer(u_size, PointerTypes::Heap(_)) = self.stack.data[idx] {
-                    self.mark_obj(u_size, marked_obj);
+                    self.gc_mark_obj(u_size, marked_obj);
                 } else if let Types::Pointer(u_size, PointerTypes::Object) = self.stack.data[idx] {
-                    self.mark_obj(u_size, marked_obj);
+                    self.gc_mark_obj(u_size, marked_obj);
                 } else if let Types::Pointer(u_size, PointerTypes::String) = self.stack.data[idx] {
-                    self.mark_string(u_size, marked_string);
+                    self.gc_mark_string(u_size, marked_string);
                 }
             }
         }
-        pub fn mark_registers(&mut self, marked: &mut Vec<bool>, marked_str: &mut Vec<bool>) {
+        pub fn gc_mark_registers(&mut self, marked: &mut Vec<bool>, marked_str: &mut Vec<bool>) {
             for reg in self.registers {
                 if let Types::Pointer(u_size, PointerTypes::Heap(_)) = reg {
-                    self.mark_obj(u_size, marked);
+                    self.gc_mark_obj(u_size, marked);
                 } else if let Types::Pointer(u_size, PointerTypes::Object) = reg {
-                    self.mark_obj(u_size, marked);
+                    self.gc_mark_obj(u_size, marked);
                 } else if let Types::Pointer(u_size, PointerTypes::String) = reg {
-                    self.mark_string(u_size, marked_str);
+                    self.gc_mark_string(u_size, marked_str);
                 }
             }
         }
@@ -1228,6 +1231,16 @@ pub mod runtime_types {
             }
         }
         pub fn from_String(&mut self, str: String) -> usize {
+            // either push a new string or occupy a deleted string
+            if let Some(loc) = self.garbage.pop() {
+                self.pool[loc] = str.chars().collect();
+                loc
+            } else {
+                self.pool.push(str.chars().collect());
+                self.pool.len() - 1
+            }
+        }
+        pub fn from_str(&mut self, str: &str) -> usize {
             // either push a new string or occupy a deleted string
             if let Some(loc) = self.garbage.pop() {
                 self.pool[loc] = str.chars().collect();
@@ -1406,8 +1419,8 @@ pub mod runtime_types {
     use std::{clone, fmt, rc::Rc, sync::Arc};
 
     use super::{
-        runtime_error::{self, ErrTypes},
         lib::Library,
+        runtime_error::{self, ErrTypes},
     };
     impl fmt::Display for Types {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -1739,9 +1752,51 @@ pub mod runtime_error {
     }
 }
 pub mod lib {
-    use crate::{runtime_types::*, runtime_error::*};
+    use crate::{runtime_error::*, runtime_types::*};
 
-    pub type RegisterData = (String, usize);
+    pub struct RegisterData {
+        pub consts: Vec<(String, Types)>,
+        pub enums: Vec<(String, Vec<(String, Types)>)>,
+        /// structs, funtions, implements, traits
+        pub rest: String,
+    }
+
+    impl RegisterData {
+        pub fn new() -> Self {
+            Self {
+                consts: Vec::new(),
+                enums: Vec::new(),
+                rest: String::new(),
+            }
+        }
+        pub fn add_const(mut self, name: String, kind: Types) -> Self {
+            self.consts.push((name, kind));
+            self
+        }
+        pub fn add_consts(mut self, consts: Vec<(String, Types)>) -> Self {
+            self.consts.extend(consts);
+            self
+        }
+        pub fn add_enum(mut self, name: String, variants: Vec<(String, Types)>) -> Self {
+            self.enums.push((name, variants));
+            self
+        }
+        pub fn add_enums(mut self, enums: Vec<(String, Vec<(String, Types)>)>) -> Self {
+            self.enums.extend(enums);
+            self
+        }
+        pub fn set_rest(mut self, rest: String) -> Self {
+            self.rest = rest;
+            self
+        }
+        pub fn add_rest(mut self, rest: String) -> Self {
+            self.rest.push_str(&rest);
+            self
+        }
+        pub fn build(self) -> Self {
+            self
+        }
+    }
 
     /// public interface for the library to be used by the interpreter and the compiler
     pub trait Library {
@@ -1750,13 +1805,10 @@ pub mod lib {
         fn call(&mut self, id: usize, mem: PublicData) -> Result<Types, ErrTypes>;
         /// returns the name of the library
         fn name(&self) -> String;
-        /// returns the functions of the library
-        /// (name, id)
-        /// name must be in the format of
-        /// name: fun name<T>(args: T): T
-        ///
         /// this is only enforced by the compiler
         /// and not by the interpreter
-        fn register(&self) -> Vec<RegisterData>;
+        ///
+        /// my_id: the id of the library in case you have a funtion that takes a struct as an argument and you need to check type on runtime
+        fn register(&self) -> RegisterData;
     }
 }

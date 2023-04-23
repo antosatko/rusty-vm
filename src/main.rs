@@ -1,7 +1,7 @@
 use reader::reader::*;
 extern crate runtime;
 use runtime::runtime_types::*;
-use std::{env, time::SystemTime, mem};
+use std::{env, time::SystemTime, mem, fs::read};
 
 mod reader;
 mod test;
@@ -61,4 +61,14 @@ fn data_report(ctx: &Context, runtime: Option<u128>) {
             println!("{} {:?}", "Strings:", ctx.memory.strings.pool);
         }
     }
+    println!("size in bytes: {}", mem::size_of::<Context>());
+    let mut ctx = Context::new();
+    let time = SystemTime::now();
+    for _ in 0..100000 {
+        ctx.memory.strings.from_str("Hello World!");
+    }
+    ctx.memory.gc_sweep();
+    println!("time taken: {}", SystemTime::now().duration_since(time).unwrap().as_millis());
+    // stop the program from exiting
+    //std::io::stdin().read_line(&mut String::new()).unwrap();
 }
