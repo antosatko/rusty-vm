@@ -31,6 +31,12 @@ impl Context {
                     garbage: vec![],
                 },
                 non_primitives: vec![],
+                gc: GarbageCollector {
+                    sweeps_count: 0,
+                    memory_swept: 0,
+                    disabled: true,
+                    sweep_threshold: usize::MAX,
+                },
             },
             code: Code {
                 data: vec![],
@@ -51,9 +57,11 @@ impl Context {
             libs: vec![],
         }
     }
-    pub fn run(&mut self) -> bool {
-        while self.read_line() {}
-        return true;
+    pub fn run(&mut self) {
+        while self.read_line() {
+            // TODO: remove for or testing
+            self.memory.gc_sweep_unoptimized()
+        }
     }
     fn read_line(&mut self) -> bool {
         macro_rules! operation {
@@ -626,6 +634,8 @@ impl Context {
                     PublicData {
                         memory: &mut self.memory,
                         code: &mut self.code,
+                        break_code: &mut self.break_code,
+                        exit_code: &mut self.exit_code,
                     },
                 ) {
                     Ok(value) => {
@@ -783,8 +793,11 @@ impl Context {
                 }
             }
             Cast(reg1, ttype) => {
-                if let Err(err) = Self::cast(&mut self.memory.registers, reg1, ttype) {
-                    return self.panic_rt(err);
+                match Self::cast(&mut self.memory.registers, reg1, ttype) {
+                    Ok(value) => {
+                        self.memory.registers[reg1] = value;
+                    }
+                    Err(err) => return self.panic_rt(err),
                 }
                 self.next_line();
             }
@@ -855,72 +868,77 @@ impl Context {
     fn next_line(&mut self) {
         self.code.ptr += 1;
     }
-    fn cast(registers: &mut Registers, reg1: usize, reg2: usize) -> Result<bool, ErrTypes> {
+    fn cast(registers: &mut Registers, reg1: usize, reg2: usize) -> Result<Types, ErrTypes> {
         match registers[reg1] {
             Types::Bool(bol) => match registers[reg2] {
-                Types::Int(_) => registers[reg1] = if bol { Types::Int(1) } else { Types::Int(0) },
-                Types::Float(_) => {
-                    registers[reg1] = if bol {
-                        Types::Float(1f64)
+                Types::Int(_) => {
+                    return if bol {
+                        Ok(Types::Int(1))
                     } else {
-                        Types::Float(0f64)
+                        Ok(Types::Int(0))
+                    }
+                }
+                Types::Float(_) => {
+                    return if bol {
+                        Ok(Types::Float(1f64))
+                    } else {
+                        Ok(Types::Float(0f64))
                     }
                 }
                 Types::Usize(_) => {
-                    registers[reg1] = if bol {
-                        Types::Usize(1)
+                    return if bol {
+                        Ok(Types::Usize(1))
                     } else {
-                        Types::Usize(0)
+                        Ok(Types::Usize(0))
                     }
                 }
                 Types::Char(_) => {
-                    registers[reg1] = if bol {
-                        Types::Char('1')
+                    return if bol {
+                        Ok(Types::Char('1'))
                     } else {
-                        Types::Char('0')
+                        Ok(Types::Char('0'))
                     }
                 }
                 _ => return Err(ErrTypes::ImplicitCast(registers[reg1], registers[reg2])),
             },
             Types::Int(num) => match registers[reg2] {
-                Types::Float(_) => registers[reg1] = Types::Float(num as f64),
-                Types::Usize(_) => registers[reg1] = Types::Usize(num as usize),
+                Types::Float(_) => return Ok(Types::Float(num as f64)),
+                Types::Usize(_) => return Ok(Types::Usize(num as usize)),
                 Types::Bool(_) => {
-                    registers[reg1] = if num == 0 {
-                        Types::Bool(false)
+                    return if num == 0 {
+                        Ok(Types::Bool(false))
                     } else {
-                        Types::Bool(true)
+                        Ok(Types::Bool(true))
                     }
                 }
                 _ => return Err(ErrTypes::ImplicitCast(registers[reg1], registers[reg2])),
             },
             Types::Float(num) => match registers[reg2] {
-                Types::Int(_) => registers[reg1] = Types::Int(num as i64),
-                Types::Usize(_) => registers[reg1] = Types::Usize(num as usize),
+                Types::Int(_) => return Ok(Types::Int(num as i64)),
+                Types::Usize(_) => return Ok(Types::Usize(num as usize)),
                 Types::Bool(_) => {
-                    registers[reg1] = if num == 0f64 {
-                        Types::Bool(false)
+                    return if num == 0f64 {
+                        Ok(Types::Bool(false))
                     } else {
-                        Types::Bool(true)
+                        Ok(Types::Bool(true))
                     }
                 }
                 _ => return Err(ErrTypes::ImplicitCast(registers[reg1], registers[reg2])),
             },
             Types::Usize(num) => match registers[reg2] {
-                Types::Int(_) => registers[reg1] = Types::Int(num as i64),
-                Types::Float(_) => registers[reg1] = Types::Float(num as f64),
+                Types::Int(_) => return Ok(Types::Int(num as i64)),
+                Types::Float(_) => return Ok(Types::Float(num as f64)),
                 Types::Bool(_) => {
-                    registers[reg1] = if num == 0 {
-                        Types::Bool(false)
+                    return if num == 0 {
+                        Ok(Types::Bool(false))
                     } else {
-                        Types::Bool(true)
+                        Ok(Types::Bool(true))
                     }
                 }
                 _ => return Err(ErrTypes::ImplicitCast(registers[reg1], registers[reg2])),
             },
             _ => return Err(ErrTypes::ImplicitCast(registers[reg1], registers[reg2])),
         }
-        Ok(true)
     }
     fn panic_rt(&mut self, kind: ErrTypes) -> bool {
         if self.enter_panic() {
@@ -960,6 +978,18 @@ impl Context {
         self.catches.truncate(i);
         true
     }
+    pub fn size(&self) -> usize {
+        self.memory.size()
+            + std::mem::size_of_val(&self.break_code)
+            + std::mem::size_of_val(&self.catches.cache)
+            + std::mem::size_of_val(&self.catches.catches_ptr)
+            + std::mem::size_of_val(&self.code)
+            + std::mem::size_of_val(&self.exit_code)
+            + std::mem::size_of_val(&self.libs)
+    }
+    pub fn set_libs(&mut self, libs: Libs) {
+        self.libs = libs.into();
+    }
 }
 #[allow(unused)]
 pub mod runtime_types {
@@ -984,7 +1014,7 @@ pub mod runtime_types {
         pub break_code: Option<usize>,
         pub catches: Catches,
         pub exit_code: ExitCodes,
-        pub libs: Vec<Box<dyn Library>>,
+        pub libs: Libs,
     }
     pub struct Memory {
         pub stack: Stack,
@@ -992,6 +1022,13 @@ pub mod runtime_types {
         pub heap: Heap,
         pub strings: Strings,
         pub non_primitives: Vec<NonPrimitiveType>,
+        pub gc: GarbageCollector,
+    }
+    pub struct GarbageCollector {
+        pub sweeps_count: usize,
+        pub memory_swept: usize,
+        pub disabled: bool,
+        pub sweep_threshold: usize,
     }
     impl Memory {
         // allocator starts here
@@ -1076,10 +1113,16 @@ pub mod runtime_types {
         }
         /// GC
         pub fn gc_sweep(&mut self) {
+            if self.gc.disabled {
+                return;
+            }
             let marked = self.gc_mark();
             self.gc_sweep_marked(marked);
         }
         pub fn gc_sweep_unoptimized(&mut self) {
+            if self.gc.disabled {
+                return;
+            }
             let marked = self.gc_mark_unoptimized();
             self.gc_sweep_marked(marked);
         }
@@ -1093,8 +1136,10 @@ pub mod runtime_types {
         }
         pub fn gc_sweep_marked_obj(&mut self, marked: Vec<bool>) {
             if let Some(idx) = marked.iter().rposition(|x| !*x) {
+                self.gc.memory_swept += std::mem::size_of_val(&self.heap.data[idx..]);
                 self.heap.data.truncate(idx + 1);
             } else {
+                self.gc.memory_swept += std::mem::size_of_val(&self.heap.data[..]);
                 self.heap.data.clear();
                 return;
             }
@@ -1103,7 +1148,9 @@ pub mod runtime_types {
                     return;
                 }
                 if *mark {
+                self.gc.memory_swept += std::mem::size_of_val(&self.heap.data[i]);
                     self.heap.data[i].clear();
+                    //self.heap.data[i].shrink_to(0);
                     if !self.heap.garbage.contains(&i) {
                         self.heap.garbage.push(i);
                     }
@@ -1113,8 +1160,10 @@ pub mod runtime_types {
         pub fn gc_sweep_marked_string(&mut self, marked: Vec<bool>) {
             // find first string that is garbage and following strings are garbage and then remove them from garbage
             if let Some(idx) = marked.iter().rposition(|x| !*x) {
+                self.gc.memory_swept += std::mem::size_of_val(&self.strings.pool[idx..]);
                 self.strings.pool.truncate(idx + 1);
             } else {
+                self.gc.memory_swept += std::mem::size_of_val(&self.strings.pool);
                 self.strings.pool.clear();
                 return;
             }
@@ -1124,6 +1173,7 @@ pub mod runtime_types {
                     continue;
                 }
                 if *mark {
+                    self.gc.memory_swept += std::mem::size_of_val(&self.strings.pool[i]);
                     self.strings.pool[i].clear();
                     if !self.strings.garbage.contains(&i) {
                         self.strings.garbage.push(i);
@@ -1159,7 +1209,15 @@ pub mod runtime_types {
             }
             (marked, marked_str)
         }
-        pub fn gc_mark_obj(&mut self, obj_idx: usize, marked: &mut Vec<bool>) {
+        pub fn gc_mark_obj(
+            &mut self,
+            obj_idx: usize,
+            marked: &mut Vec<bool>,
+            marked_str: &mut Vec<bool>,
+        ) {
+            if marked.len() == 0 {
+                return;
+            }
             if !marked[obj_idx] {
                 return;
             }
@@ -1167,9 +1225,11 @@ pub mod runtime_types {
             for idx in 0..self.heap.data[obj_idx].len() {
                 let member = self.heap.data[obj_idx][idx];
                 if let Types::Pointer(u_size, PointerTypes::Object) = member {
-                    self.gc_mark_obj(u_size, marked);
+                    self.gc_mark_obj(u_size, marked, marked_str);
                 } else if let Types::Pointer(u_size, PointerTypes::Heap(_)) = member {
-                    self.gc_mark_obj(u_size, marked);
+                    self.gc_mark_obj(u_size, marked, marked_str);
+                } else if let Types::Pointer(u_size, PointerTypes::String) = member {
+                    self.gc_mark_string(u_size, marked_str)
                 }
             }
         }
@@ -1184,9 +1244,9 @@ pub mod runtime_types {
         ) {
             for idx in range.0..range.1 {
                 if let Types::Pointer(u_size, PointerTypes::Heap(_)) = self.stack.data[idx] {
-                    self.gc_mark_obj(u_size, marked_obj);
+                    self.gc_mark_obj(u_size, marked_obj, marked_string);
                 } else if let Types::Pointer(u_size, PointerTypes::Object) = self.stack.data[idx] {
-                    self.gc_mark_obj(u_size, marked_obj);
+                    self.gc_mark_obj(u_size, marked_obj, marked_string);
                 } else if let Types::Pointer(u_size, PointerTypes::String) = self.stack.data[idx] {
                     self.gc_mark_string(u_size, marked_string);
                 }
@@ -1195,15 +1255,28 @@ pub mod runtime_types {
         pub fn gc_mark_registers(&mut self, marked: &mut Vec<bool>, marked_str: &mut Vec<bool>) {
             for reg in self.registers {
                 if let Types::Pointer(u_size, PointerTypes::Heap(_)) = reg {
-                    self.gc_mark_obj(u_size, marked);
+                    self.gc_mark_obj(u_size, marked, marked_str);
                 } else if let Types::Pointer(u_size, PointerTypes::Object) = reg {
-                    self.gc_mark_obj(u_size, marked);
+                    self.gc_mark_obj(u_size, marked, marked_str);
                 } else if let Types::Pointer(u_size, PointerTypes::String) = reg {
                     self.gc_mark_string(u_size, marked_str);
                 }
             }
         }
+        /// return the size of memory in bytes
+        pub fn size(&self) -> usize {
+            std::mem::size_of_val(&self.heap)
+                + std::mem::size_of_val(&self.heap.data)
+                + std::mem::size_of_val(&self.stack)
+                + std::mem::size_of_val(&self.stack.data)
+                + std::mem::size_of_val(&self.stack.call_stack)
+                + std::mem::size_of_val(&self.stack.ptr)
+                + std::mem::size_of_val(&self.strings.pool)
+                + std::mem::size_of_val(&self.registers)
+                + std::mem::size_of_val(&self.non_primitives)
+        }
     }
+    pub type Libs = Vec<Box<dyn Library>>;
     pub struct Stack {
         pub data: Vec<Types>,
         pub ptr: usize,
@@ -1299,6 +1372,8 @@ pub mod runtime_types {
     pub struct PublicData<'a> {
         pub memory: &'a mut Memory,
         pub code: &'a mut Code,
+        pub break_code: &'a mut Option<usize>,
+        pub exit_code: &'a mut ExitCodes,
     }
     #[derive(Debug, Clone)]
     pub struct Garbage {
@@ -1353,6 +1428,7 @@ pub mod runtime_types {
         pub idx: usize,
         pub generation: u8,
     }
+    const TYPES_SIZE: usize = std::mem::size_of::<Types>();
     #[derive(Clone, Copy, Debug)]
     pub enum Types {
         Int(i64),

@@ -434,7 +434,7 @@ pub mod test {
                 true
             }
             9 => {
-                context.libs = load_libs(vec!["io"]);
+                context.set_libs(load_libs(vec!["io"]));
 
                 context.memory.strings.pool = vec![
                     "Write something: ".chars().collect(),
@@ -474,9 +474,14 @@ pub mod test {
                 true
             }
             10 => {
-                context.libs = load_libs(vec!["io"]);
-
+                context.set_libs(load_libs(vec!["io"]));
+                context.memory.heap.data = vec![
+                    [Types::Usize(656645),Types::Usize(656645)].to_vec(),
+                ];
                 context.memory.strings.pool = vec![
+                    "Write something: ".chars().collect(),
+                    "You wrote: ".chars().collect(),
+                    "hello file".chars().collect(),
                     ];
                 context.memory.stack.data = vec![
                     Types::Null,     // args array

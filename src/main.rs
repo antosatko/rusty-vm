@@ -31,7 +31,6 @@ fn main() {
                 .as_millis(),
         ));
     }
-    ctx.libs.clear();
 }
 
 fn data_report(ctx: &Context, runtime: Option<u128>) {
@@ -62,6 +61,7 @@ fn data_report(ctx: &Context, runtime: Option<u128>) {
         }
     }
     println!("size in bytes: {}", mem::size_of::<Context>());
+    println!("real size in bytes: {}", ctx.size());
     let mut ctx = Context::new();
     let time = SystemTime::now();
     for _ in 0..100000 {
@@ -71,4 +71,5 @@ fn data_report(ctx: &Context, runtime: Option<u128>) {
     println!("time taken: {}", SystemTime::now().duration_since(time).unwrap().as_millis());
     // stop the program from exiting
     //std::io::stdin().read_line(&mut String::new()).unwrap();
+    println!("gc: {:?}", ctx.memory.gc.memory_swept);
 }
