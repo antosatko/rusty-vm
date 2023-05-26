@@ -8,7 +8,7 @@ mod test;
 //mod writer;
 fn main() {
     let mut args = env::args();
-    let mut report = true;
+    let mut report = false;
     /*let mut ctx = match args.nth(1) {
         Some(src) => read_file(src, Context::new()),
         None => {
@@ -62,7 +62,7 @@ fn data_report(ctx: &Context, runtime: Option<u128>) {
     }
     println!("size in bytes: {}", mem::size_of::<Context>());
     println!("real size in bytes: {}", ctx.size());
-    let mut ctx = Context::new();
+    /*let mut ctx = Context::new();
     let time = SystemTime::now();
     for _ in 0..100000 {
         ctx.memory.strings.from_str("Hello World!");
@@ -71,5 +71,5 @@ fn data_report(ctx: &Context, runtime: Option<u128>) {
     println!("time taken: {}", SystemTime::now().duration_since(time).unwrap().as_millis());
     // stop the program from exiting
     //std::io::stdin().read_line(&mut String::new()).unwrap();
-    println!("gc: {:?}", ctx.memory.gc.memory_swept);
+    println!("gc: {:?}", ctx.memory.gc.memory_swept);*/
 }

@@ -829,7 +829,7 @@ impl Context {
                 self.catches.pop();
                 self.next_line()
             }
-            StrCpy(reg) => {
+            /*StrCpy(reg) => {
                 if let Types::Pointer(u_size, PointerTypes::String) = self.memory.registers[reg] {
                     self.memory.registers[POINTER_REG] =
                         Types::Pointer(self.memory.strings.copy(u_size), PointerTypes::String);
@@ -840,7 +840,7 @@ impl Context {
                     ));
                 }
                 self.next_line();
-            }
+            }*/
             StrNew => {
                 self.memory.registers[POINTER_REG] =
                     Types::Pointer(self.memory.strings.new(), PointerTypes::String);
@@ -1700,8 +1700,6 @@ pub mod runtime_types {
         NPType(usize, usize),
         /// String new | creates new string and stores pointer in reg(POINTER_REGISTER)
         StrNew,
-        /// String copy: str_reg | copies string from reg(str_reg) to new string and stores pointer in reg(POINTER_REGISTER)
-        StrCpy(usize),
         /// Into string: val_reg | converts value on reg(value_reg) to string and stores pointer in reg(POINTER_REG)
         IntoStr(usize),
     }
@@ -1759,7 +1757,7 @@ pub mod runtime_types {
                 Instructions::DelCatch => "DeleteCatch",
                 Instructions::NPType(_, _) => "NonPrimitiveType",
                 Instructions::StrNew => "StringNew",
-                Instructions::StrCpy(_) => "StringCopy",
+                //Instructions::StrCpy(_) => "StringCopy",
                 Instructions::Dalc => "Deallocate",
                 Instructions::IntoStr(_) => "IntoString",
             };
