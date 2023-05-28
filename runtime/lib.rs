@@ -1828,6 +1828,7 @@ pub mod runtime_error {
 pub mod lib {
     use crate::{runtime_error::*, runtime_types::*};
 
+    /// all of this will be used by the compiler to generate the code
     pub struct RegisterData {
         pub consts: Vec<(String, Types)>,
         pub enums: Vec<(String, Vec<(String, Types)>)>,
