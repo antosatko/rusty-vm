@@ -1,9 +1,9 @@
-# Rusty Danda vm
+# Ruda vm
 <a><img src="logo.png" align="middle" height="256" width="256" ></a>
 
 ## About
 
-This is virtual machine that Rusty danda binary runs on. It does not include compiler or language refferences.
+This is virtual machine that Ruda binary runs on. It does not include compiler or language refferences.
 
 If you want to use RDVM in your project, reffer to the main repository.
 
