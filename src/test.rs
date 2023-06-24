@@ -6,7 +6,7 @@ pub mod test {
 
     const STD: &str = "../rusty_standard_lib/{name}/target/debug/{name}.dll";
 
-    const ID: usize = 10;
+    const ID: usize = 1;
     pub fn test_init(id: Option<usize>, context: &mut Context) -> bool {
         let test_id = if let Some(num) = id { num } else { ID };
         println!("Running test {test_id}");
