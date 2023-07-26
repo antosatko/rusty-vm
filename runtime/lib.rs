@@ -34,9 +34,10 @@ impl Context {
                 gc: GarbageCollector {
                     sweeps_count: 0,
                     memory_swept: 0,
-                    disabled: true,
+                    disabled: false,
                     sweep_threshold: usize::MAX,
                 },
+                fun_table: vec![],
             },
             code: Code {
                 data: vec![],
@@ -58,53 +59,61 @@ impl Context {
         }
     }
     pub fn run(&mut self) {
+        std::panic::set_hook(Box::new(|info| {
+            println!("{}", info.to_string());
+
+            println!("This is most likely caused by a bug in the compiler, please report it to the compiler developer.");
+
+            println!("If you are the compiler developer, then you know what to do :)");
+        }));
+
         while self.read_line() {
             // TODO: remove for or testing
             self.memory.gc_sweep_unoptimized()
         }
     }
-    fn read_line(&mut self) -> bool {
+    pub fn read_line(&mut self) -> bool {
         macro_rules! operation {
-            (ptr, $operand: ident, $num1: ident, bool) => {
-                if let Types::Pointer(num2, _) = self.memory.registers[GENERAL_REG2] {
-                    self.memory.registers[GENERAL_REG1] = Types::Bool($num1.$operand(&num2));
+            (ptr, $operand: ident, $num1: ident, bool, $r1: expr, $r2: expr, $res: expr) => {
+                if let Types::Pointer(num2, _) = self.memory.registers[$r2] {
+                    self.memory.registers[$res] = Types::Bool($num1.$operand(&num2));
                 } else {
                     return self.panic_rt(ErrTypes::CrossTypeOperation(
-                        self.memory.registers[GENERAL_REG1],
-                        self.memory.registers[GENERAL_REG2],
+                        self.memory.registers[$r1],
+                        self.memory.registers[$r2],
                         self.code.data[self.code.ptr],
                     ));
                 }
             };
-            ($type: tt, $operand: ident, $num1: ident, bool) => {
-                if let Types::$type(num2) = self.memory.registers[GENERAL_REG2] {
-                    self.memory.registers[GENERAL_REG1] = Types::Bool($num1.$operand(&num2));
+            ($type: tt, $operand: ident, $num1: ident, bool, $r1: expr, $r2: expr, $res: expr) => {
+                if let Types::$type(num2) = self.memory.registers[$r2] {
+                    self.memory.registers[$res] = Types::Bool($num1.$operand(&num2));
                 } else {
                     return self.panic_rt(ErrTypes::CrossTypeOperation(
-                        self.memory.registers[GENERAL_REG1],
-                        self.memory.registers[GENERAL_REG2],
+                        self.memory.registers[$r1],
+                        self.memory.registers[$r2],
                         self.code.data[self.code.ptr],
                     ));
                 }
             };
-            ($type: tt, $operand: ident, $num1: ident) => {
-                if let Types::$type(num2) = self.memory.registers[GENERAL_REG2] {
-                    self.memory.registers[GENERAL_REG1] = Types::$type($num1.$operand(num2));
+            ($type: tt, $operand: ident, $num1: ident, $r1: expr, $r2: expr, $res: expr) => {
+                if let Types::$type(num2) = self.memory.registers[$r2] {
+                    self.memory.registers[$res] = Types::$type($num1.$operand(num2));
                 } else {
                     return self.panic_rt(ErrTypes::CrossTypeOperation(
-                        self.memory.registers[GENERAL_REG1],
-                        self.memory.registers[GENERAL_REG2],
+                        self.memory.registers[$r1],
+                        self.memory.registers[$r2],
                         self.code.data[self.code.ptr],
                     ));
                 }
             };
-            ($type: tt, %, $num1: ident) => {
-                if let Types::$type(num2) = self.memory.registers[GENERAL_REG2] {
-                    self.memory.registers[GENERAL_REG1] = Types::$type($num1 % num2);
+            ($type: tt, %, $num1: ident, $r1: expr, $r2: expr, $res: expr) => {
+                if let Types::$type(num2) = self.memory.registers[$r2] {
+                    self.memory.registers[$res] = Types::$type($num1 % num2);
                 } else {
                     return self.panic_rt(ErrTypes::CrossTypeOperation(
-                        self.memory.registers[GENERAL_REG1],
-                        self.memory.registers[GENERAL_REG2],
+                        self.memory.registers[$r1],
+                        self.memory.registers[$r2],
                         self.code.data[self.code.ptr],
                     ));
                 }
@@ -386,14 +395,64 @@ impl Context {
                 self.code.ptr = pos;
             }
             Gotop => {
-                if let Types::CodePointer(u_size) = self.memory.registers[CODE_PTR_REG] {
-                    self.code.ptr = u_size
+                if let Types::Function(u_size) = self.memory.registers[CODE_PTR_REG] {
+                    self.code.ptr = self.memory.fun_table[u_size].loc;
                 } else {
                     return self.panic_rt(ErrTypes::InvalidType(
                         self.memory.registers[CODE_PTR_REG],
-                        Types::CodePointer(0),
+                        Types::Function(0),
                     ));
                 }
+            }
+            ResD(reg_id) => {
+                if let Types::Function(u_size) = self.memory.registers[reg_id] {
+                    if let Some((size, pointers_len)) = self.memory.fun_table[u_size].stack_size {
+                        let end = self.stack_end() + size;
+                        self.memory.stack.ptr += 1;
+                        if self.memory.stack.ptr >= self.memory.stack.call_stack.len() {
+                            if self.memory.stack.ptr > self.memory.stack.call_stack.len() {
+                                loop {
+                                    println!(
+                                        "Samik mel pravdu, ale tohle stejne nikdy neuvidis ;p"
+                                    );
+                                }
+                            }
+                            return self.panic_rt(ErrTypes::StackOverflow);
+                        }
+                        self.memory.stack.call_stack[self.memory.stack.ptr].end = end;
+                        self.memory.stack.call_stack[self.memory.stack.ptr].pointers_len =
+                            pointers_len;
+                        if end > self.memory.stack.data.len() {
+                            self.memory.stack.data.resize(end, Types::Null);
+                        }
+                    }
+                } else {
+                    return self.panic_rt(ErrTypes::InvalidType(
+                        self.memory.registers[CODE_PTR_REG],
+                        Types::Function(0),
+                    ));
+                }
+                self.next_line();
+            }
+            ArgD(id_reg, arg_num, value_reg) => {
+                if let Types::Function(u_size) = self.memory.registers[id_reg] {
+                    let where_to = &self.memory.fun_table[u_size].params[arg_num];
+                    match where_to {
+                        MemoryLoc::Stack(offset) => {
+                            let end = self.stack_end();
+                            self.memory.stack.data[end - offset] = self.memory.registers[value_reg];
+                        }
+                        MemoryLoc::Register(reg) => {
+                            self.memory.registers[*reg] = self.memory.registers[value_reg];
+                        }
+                    }
+                } else {
+                    return self.panic_rt(ErrTypes::InvalidType(
+                        self.memory.registers[CODE_PTR_REG],
+                        Types::Function(0),
+                    ));
+                }
+                self.next_line();
             }
             Brnc(pos1, pos2) => {
                 if let Types::Bool(bool) = self.memory.registers[GENERAL_REG1] {
@@ -455,173 +514,173 @@ impl Context {
                 self.memory.registers[reg2] = self.memory.registers[reg1];
                 self.next_line();
             }
-            Add => {
-                match self.memory.registers[GENERAL_REG1] {
-                    Types::Int(num1) => operation!(Int, add, num1),
-                    Types::Float(num1) => operation!(Float, add, num1),
-                    Types::Usize(num1) => operation!(Usize, add, num1),
+            Add(r1, r2, res) => {
+                match self.memory.registers[r1] {
+                    Types::Int(num1) => operation!(Int, add, num1, r1, r2, res),
+                    Types::Float(num1) => operation!(Float, add, num1, r1, r2, res),
+                    Types::Usize(num1) => operation!(Usize, add, num1, r1, r2, res),
                     _ => {
                         return self.panic_rt(ErrTypes::WrongTypeOperation(
-                            self.memory.registers[GENERAL_REG1],
+                            self.memory.registers[r1],
                             self.code.data[self.code.ptr],
                         ));
                     }
                 }
                 self.next_line();
             }
-            Sub => {
-                match self.memory.registers[GENERAL_REG1] {
-                    Types::Int(num1) => operation!(Int, sub, num1),
-                    Types::Float(num1) => operation!(Float, sub, num1),
-                    Types::Usize(num1) => operation!(Usize, sub, num1),
+            Sub(r1, r2, res) => {
+                match self.memory.registers[r1] {
+                    Types::Int(num1) => operation!(Int, sub, num1, r1, r2, res),
+                    Types::Float(num1) => operation!(Float, sub, num1, r1, r2, res),
+                    Types::Usize(num1) => operation!(Usize, sub, num1, r1, r2, res),
                     _ => {
                         return self.panic_rt(ErrTypes::WrongTypeOperation(
-                            self.memory.registers[GENERAL_REG1],
+                            self.memory.registers[r1],
                             self.code.data[self.code.ptr],
                         ));
                     }
                 }
                 self.next_line();
             }
-            Mul => {
-                match self.memory.registers[GENERAL_REG1] {
-                    Types::Int(num1) => operation!(Int, mul, num1),
-                    Types::Float(num1) => operation!(Float, mul, num1),
-                    Types::Usize(num1) => operation!(Usize, mul, num1),
+            Mul(r1, r2, res) => {
+                match self.memory.registers[r1] {
+                    Types::Int(num1) => operation!(Int, mul, num1, r1, r2, res),
+                    Types::Float(num1) => operation!(Float, mul, num1, r1, r2, res),
+                    Types::Usize(num1) => operation!(Usize, mul, num1, r1, r2, res),
                     _ => {
                         return self.panic_rt(ErrTypes::WrongTypeOperation(
-                            self.memory.registers[GENERAL_REG1],
+                            self.memory.registers[r1],
                             self.code.data[self.code.ptr],
                         ));
                     }
                 }
                 self.next_line();
             }
-            Div => {
-                match self.memory.registers[GENERAL_REG1] {
-                    Types::Int(num1) => operation!(Int, div, num1),
-                    Types::Float(num1) => operation!(Float, div, num1),
-                    Types::Usize(num1) => operation!(Usize, div, num1),
+            Div(r1, r2, res) => {
+                match self.memory.registers[r1] {
+                    Types::Int(num1) => operation!(Int, div, num1, r1, r2, res),
+                    Types::Float(num1) => operation!(Float, div, num1, r1, r2, res),
+                    Types::Usize(num1) => operation!(Usize, div, num1, r1, r2, res),
                     _ => {
                         return self.panic_rt(ErrTypes::WrongTypeOperation(
-                            self.memory.registers[GENERAL_REG1],
+                            self.memory.registers[r1],
                             self.code.data[self.code.ptr],
                         ));
                     }
                 }
                 self.next_line();
             }
-            Mod => {
-                match self.memory.registers[GENERAL_REG1] {
-                    Types::Int(num1) => operation!(Int, %, num1),
-                    Types::Float(num1) => operation!(Float, %, num1),
-                    Types::Usize(num1) => operation!(Usize, %, num1),
+            Mod(r1, r2, res) => {
+                match self.memory.registers[r1] {
+                    Types::Int(num1) => operation!(Int, %, num1, r1, r2, res),
+                    Types::Float(num1) => operation!(Float, %, num1, r1, r2, res),
+                    Types::Usize(num1) => operation!(Usize, %, num1, r1, r2, res),
                     _ => {
                         return self.panic_rt(ErrTypes::WrongTypeOperation(
-                            self.memory.registers[GENERAL_REG1],
+                            self.memory.registers[r1],
                             self.code.data[self.code.ptr],
                         ));
                     }
                 }
                 self.next_line();
             }
-            Equ => {
-                match self.memory.registers[GENERAL_REG1] {
-                    Types::Int(num1) => operation!(Int, eq, num1, bool),
-                    Types::Float(num1) => operation!(Float, eq, num1, bool),
-                    Types::Usize(num1) => operation!(Usize, eq, num1, bool),
-                    Types::Pointer(num1, _) => operation!(ptr, eq, num1, bool),
-                    Types::Bool(var1) => operation!(Bool, eq, var1, bool),
-                    Types::Char(char1) => operation!(Char, eq, char1, bool),
+            Equ(r1, r2, res) => {
+                match self.memory.registers[r1] {
+                    Types::Int(num1) => operation!(Int, eq, num1, bool, r1, r2, res),
+                    Types::Float(num1) => operation!(Float, eq, num1, bool, r1, r2, res),
+                    Types::Usize(num1) => operation!(Usize, eq, num1, bool, r1, r2, res),
+                    Types::Pointer(num1, _) => operation!(ptr, eq, num1, bool, r1, r2, res),
+                    Types::Bool(var1) => operation!(Bool, eq, var1, bool, r1, r2, res),
+                    Types::Char(char1) => operation!(Char, eq, char1, bool, r1, r2, res),
                     _ => {
                         return self.panic_rt(ErrTypes::WrongTypeOperation(
-                            self.memory.registers[GENERAL_REG1],
+                            self.memory.registers[r1],
                             self.code.data[self.code.ptr],
                         ));
                     }
                 }
                 self.next_line();
             }
-            Grt => {
-                match self.memory.registers[GENERAL_REG1] {
-                    Types::Int(num1) => operation!(Int, gt, num1, bool),
-                    Types::Float(num1) => operation!(Float, gt, num1, bool),
-                    Types::Usize(num1) => operation!(Usize, gt, num1, bool),
-                    Types::Char(char1) => operation!(Char, gt, char1, bool),
+            Grt(r1, r2, res) => {
+                match self.memory.registers[r1] {
+                    Types::Int(num1) => operation!(Int, gt, num1, bool, r1, r2, res),
+                    Types::Float(num1) => operation!(Float, gt, num1, bool, r1, r2, res),
+                    Types::Usize(num1) => operation!(Usize, gt, num1, bool, r1, r2, res),
+                    Types::Char(char1) => operation!(Char, gt, char1, bool, r1, r2, res),
                     _ => {
                         return self.panic_rt(ErrTypes::WrongTypeOperation(
-                            self.memory.registers[GENERAL_REG1],
+                            self.memory.registers[r1],
                             self.code.data[self.code.ptr],
                         ));
                     }
                 }
                 self.next_line();
             }
-            Less => {
-                match self.memory.registers[GENERAL_REG1] {
-                    Types::Int(num1) => operation!(Int, lt, num1, bool),
-                    Types::Float(num1) => operation!(Float, lt, num1, bool),
-                    Types::Usize(num1) => operation!(Usize, lt, num1, bool),
-                    Types::Char(char1) => operation!(Char, lt, char1, bool),
+            Less(r1, r2, res) => {
+                match self.memory.registers[r1] {
+                    Types::Int(num1) => operation!(Int, lt, num1, bool, r1, r2, res),
+                    Types::Float(num1) => operation!(Float, lt, num1, bool, r1, r2, res),
+                    Types::Usize(num1) => operation!(Usize, lt, num1, bool, r1, r2, res),
+                    Types::Char(char1) => operation!(Char, lt, char1, bool, r1, r2, res),
                     _ => {
                         return self.panic_rt(ErrTypes::WrongTypeOperation(
-                            self.memory.registers[GENERAL_REG1],
+                            self.memory.registers[r1],
                             self.code.data[self.code.ptr],
                         ));
                     }
                 }
                 self.next_line();
             }
-            And => {
-                match self.memory.registers[GENERAL_REG1] {
+            And(r1, r2, res) => {
+                match self.memory.registers[r1] {
                     Types::Bool(var1) => {
-                        if let Types::Bool(var2) = self.memory.registers[GENERAL_REG2] {
-                            self.memory.registers[GENERAL_REG1] = Types::Bool(var1 && var2)
+                        if let Types::Bool(var2) = self.memory.registers[r2] {
+                            self.memory.registers[res] = Types::Bool(var1 && var2)
                         } else {
                             return self.panic_rt(ErrTypes::CrossTypeOperation(
-                                self.memory.registers[GENERAL_REG1],
-                                self.memory.registers[GENERAL_REG2],
+                                self.memory.registers[r1],
+                                self.memory.registers[r2],
                                 self.code.data[self.code.ptr],
                             ));
                         }
                     }
                     _ => {
                         return self.panic_rt(ErrTypes::WrongTypeOperation(
-                            self.memory.registers[GENERAL_REG1],
+                            self.memory.registers[r1],
                             self.code.data[self.code.ptr],
                         ));
                     }
                 }
                 self.next_line();
             }
-            Or => {
-                match self.memory.registers[GENERAL_REG1] {
+            Or(r1, r2, res) => {
+                match self.memory.registers[r1] {
                     Types::Bool(var1) => {
-                        if let Types::Bool(var2) = self.memory.registers[GENERAL_REG2] {
-                            self.memory.registers[GENERAL_REG1] = Types::Bool(var1 || var2)
+                        if let Types::Bool(var2) = self.memory.registers[r2] {
+                            self.memory.registers[res] = Types::Bool(var1 || var2)
                         } else {
                             return self.panic_rt(ErrTypes::CrossTypeOperation(
-                                self.memory.registers[GENERAL_REG1],
-                                self.memory.registers[GENERAL_REG2],
+                                self.memory.registers[r1],
+                                self.memory.registers[r2],
                                 self.code.data[self.code.ptr],
                             ));
                         }
                     }
                     _ => {
                         return self.panic_rt(ErrTypes::WrongTypeOperation(
-                            self.memory.registers[GENERAL_REG1],
+                            self.memory.registers[r1],
                             self.code.data[self.code.ptr],
                         ));
                     }
                 }
                 self.next_line();
             }
-            Not => {
-                match self.memory.registers[GENERAL_REG1] {
-                    Types::Bool(var) => self.memory.registers[GENERAL_REG1] = Types::Bool(!var),
+            Not(r1, res) => {
+                match self.memory.registers[r1] {
+                    Types::Bool(var) => self.memory.registers[res] = Types::Bool(!var),
                     _ => {
                         return self.panic_rt(ErrTypes::WrongTypeOperation(
-                            self.memory.registers[GENERAL_REG1],
+                            self.memory.registers[r1],
                             self.code.data[self.code.ptr],
                         ));
                     }
@@ -1023,6 +1082,7 @@ pub mod runtime_types {
         pub strings: Strings,
         pub non_primitives: Vec<NonPrimitiveType>,
         pub gc: GarbageCollector,
+        pub fun_table: Vec<FunSpec>,
     }
     pub struct GarbageCollector {
         pub sweeps_count: usize,
@@ -1148,7 +1208,7 @@ pub mod runtime_types {
                     return;
                 }
                 if *mark {
-                self.gc.memory_swept += std::mem::size_of_val(&self.heap.data[i]);
+                    self.gc.memory_swept += std::mem::size_of_val(&self.heap.data[i]);
                     self.heap.data[i].clear();
                     //self.heap.data[i].shrink_to(0);
                     if !self.heap.garbage.contains(&i) {
@@ -1369,6 +1429,17 @@ pub mod runtime_types {
         pub data: Vec<Instructions>,
         pub ptr: usize,
     }
+    pub struct FunSpec {
+        pub name: String,
+        pub params: Vec<MemoryLoc>,
+        /// size, pointers_len
+        pub stack_size: Option<(usize, usize)>,
+        pub loc: usize,
+    }
+    pub enum MemoryLoc {
+        Stack(usize),
+        Register(usize),
+    }
     pub struct PublicData<'a> {
         pub memory: &'a mut Memory,
         pub code: &'a mut Code,
@@ -1437,7 +1508,7 @@ pub mod runtime_types {
         Char(char),
         Bool(bool),
         Pointer(usize, PointerTypes),
-        CodePointer(usize),
+        Function(usize),
         // null represents an empty value
         Null,
         // void represents a value that is not meant to be used
@@ -1473,7 +1544,7 @@ pub mod runtime_types {
                     PointerTypes::Stack => mem.stack.data[u_size].to_string(),
                     PointerTypes::String => mem.strings.to_string(u_size),
                 },
-                Types::CodePointer(val) => val.to_string(),
+                Types::Function(val) => mem.fun_table[val].name.to_string(),
                 Types::Void => "void".to_string(),
             }
         }
@@ -1504,7 +1575,7 @@ pub mod runtime_types {
                 match *self {
                     Types::Bool(_) => write!(f, "Bool"),
                     Types::Char(_) => write!(f, "Char"),
-                    Types::CodePointer(_) => write!(f, "CodePointer"),
+                    Types::Function(_) => write!(f, "CodePointer"),
                     Types::Float(_) => write!(f, "Float"),
                     Types::Int(_) => write!(f, "Int"),
                     Types::Null => write!(f, "Null"),
@@ -1519,7 +1590,7 @@ pub mod runtime_types {
                         write!(f, "Bool<{bol}>")
                     }
                     Types::Char(char) => write!(f, "Char<{char}>"),
-                    Types::CodePointer(loc) => write!(f, "CodePointer<{loc}>"),
+                    Types::Function(loc) => write!(f, "CodePointer<{loc}>"),
                     Types::Float(num) => write!(f, "Float<{num}>"),
                     Types::Int(num) => write!(f, "Int<{num}>"),
                     Types::Null => write!(f, "Null"),
@@ -1532,7 +1603,7 @@ pub mod runtime_types {
                 match *self {
                     Types::Bool(bol) => write!(f, "{bol}"),
                     Types::Char(char) => write!(f, "{char}"),
-                    Types::CodePointer(loc) => write!(f, "{loc}"),
+                    Types::Function(loc) => write!(f, "{loc}"),
                     Types::Float(num) => write!(f, "{num}"),
                     Types::Int(num) => write!(f, "{num}"),
                     Types::Null => write!(f, "Null"),
@@ -1632,27 +1703,27 @@ pub mod runtime_types {
         /// Swap: reg1 reg2   | swaps <reg1> and <reg2>
         Swap(usize, usize),
         /// Add | reg(0) is set to the result of operation: reg(0) + reg(1)
-        Add,
+        Add(usize, usize, usize),
         /// Subtract | reg(0) is set to the result of operation: reg(0) - reg(1)
-        Sub,
+        Sub(usize, usize, usize),
         /// Multiply | reg(0) is set to the result of operation: reg(0) * reg(1)
-        Mul,
+        Mul(usize, usize, usize),
         /// Divide | reg(0) is set to the result of operation: reg(0) / reg(1)
-        Div,
+        Div(usize, usize, usize),
         /// Modulus | reg(0) is set to the result of operation: reg(0) % reg(1)
-        Mod,
+        Mod(usize, usize, usize),
         /// Equals | reg(0) is set to the result of operation: reg(0) = reg(1)
-        Equ,
+        Equ(usize, usize, usize),
         /// Greater than | reg(0) is set to the result of operation: reg(0) > reg(1)
-        Grt,
+        Grt(usize, usize, usize),
         /// Less than | reg(0) is set to the result of operation: reg(0) < reg(1)
-        Less,
+        Less(usize, usize, usize),
         /// And | reg(0) is set to the result of operation: reg(0) & reg(1)
-        And,
+        And(usize, usize, usize),
         /// Or | reg(0) is set to the result of operation: reg(0) | reg(1)
-        Or,
+        Or(usize, usize, usize),
         /// Not | reg(0) is set to the result of operation: !reg(0)
-        Not,
+        Not(usize, usize),
         /// Call | calls external <procedure>(program state, <args>) written in rust (for syscalls etc..)
         Cal(usize, usize),
         /// End              | terminates program
@@ -1702,31 +1773,35 @@ pub mod runtime_types {
         StrNew,
         /// Into string: val_reg | converts value on reg(value_reg) to string and stores pointer in reg(POINTER_REG)
         IntoStr(usize),
+        /// Reserve dynamic: id_reg | prepares memory for anonymous function call (may allocate size on stack) based on fun_table(id_reg).stack_size
+        ResD(usize),
+        /// Argument dynamic: id_reg | pushes arguments to destination(stack or registers) based on fun_table(id_reg).params
+        ArgD(usize, usize, usize),
     }
     impl fmt::Display for Instructions {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             let str = match *self {
-                Instructions::Add => "Addition",
+                Instructions::Add(_, _, _) => "Addition",
                 Instructions::Alc(_) => "Allocation",
                 Instructions::AlcS(_) => "Allocation",
-                Instructions::And => "And",
+                Instructions::And(_, _, _) => "And",
                 Instructions::Brnc(_, _) => "Branch",
                 Instructions::Cal(_, _) => "Call",
                 Instructions::Debug(_) => "Debug",
-                Instructions::Div => "Division",
+                Instructions::Div(_, _, _) => "Division",
                 Instructions::End => "End",
-                Instructions::Equ => "Equality",
+                Instructions::Equ(_, _, _) => "Equality",
                 Instructions::Goto(_) => "GoTo",
                 Instructions::Gotop => "GoToDyn",
-                Instructions::Grt => "Greater",
+                Instructions::Grt(_, _, _) => "Greater",
                 Instructions::Idx(_) => "Indexing",
                 Instructions::IdxK(_) => "Indexing",
-                Instructions::Less => "Lesser",
-                Instructions::Mod => "Modulus",
+                Instructions::Less(_, _, _) => "Lesser",
+                Instructions::Mod(_, _, _) => "Modulus",
                 Instructions::Swap(_, _) => "Swap",
-                Instructions::Mul => "Multiplication",
-                Instructions::Not => "Not",
-                Instructions::Or => "Or",
+                Instructions::Mul(_, _, _) => "Multiplication",
+                Instructions::Not(_, _) => "Not",
+                Instructions::Or(_, _, _) => "Or",
                 Instructions::Ptr(_) => "StackPointer",
                 Instructions::RAlc(_) => "Reallocation",
                 Instructions::Ufrz => "Unfreeze",
@@ -1735,7 +1810,7 @@ pub mod runtime_types {
                 Instructions::Rdp(_) => "Dereference",
                 Instructions::Res(_, _) => "Reserve",
                 Instructions::Ret => "Return",
-                Instructions::Sub => "Subtract",
+                Instructions::Sub(_, _, _) => "Subtract",
                 Instructions::Wr(_, _) => "Write",
                 Instructions::Wrp(_) => "WriteRef",
                 Instructions::Cast(_, _) => "Casting",
@@ -1760,6 +1835,8 @@ pub mod runtime_types {
                 //Instructions::StrCpy(_) => "StringCopy",
                 Instructions::Dalc => "Deallocate",
                 Instructions::IntoStr(_) => "IntoString",
+                Instructions::ResD(_) => "ReserveDynamic",
+                Instructions::ArgD(_, _, _) => "ArgumentDynamic",
             };
             write!(f, "{str}")
         }
@@ -1816,7 +1893,7 @@ pub mod runtime_error {
                 format!("Cast error: Can not implicitly cast type {type1:#} into type {type2:#}"),
                 4,
             ),
-            ErrTypes::StackOverflow => (format!("Stack overflow"), 5), // TODO: impl this
+            ErrTypes::StackOverflow => (format!("Stack overflow"), 5), // TODO: impl
             ErrTypes::CatchOwerflow => (format!("Catch overflow"), 6),
             ErrTypes::MethodNotFound => (format!("Method not found"), 7),
             ErrTypes::Message(msg) => (msg.clone(), 8),

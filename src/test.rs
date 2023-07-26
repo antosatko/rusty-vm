@@ -1,12 +1,12 @@
 pub mod test {
-    use std::{mem};
+    use std::mem;
 
     use crate::runtime::runtime_types::{Context, Instructions::*, Types::*, *};
     use libloading::Library;
 
     const STD: &str = "../rusty_standard_lib/{name}/target/debug/{name}.dll";
 
-    const ID: usize = 1;
+    const ID: usize = 10;
     pub fn test_init(id: Option<usize>, context: &mut Context) -> bool {
         let test_id = if let Some(num) = id { num } else { ID };
         println!("Running test {test_id}");
@@ -96,10 +96,10 @@ pub mod test {
                     Jump(2),
                     Rd(3, GENERAL_REG1),
                     Rd(1, GENERAL_REG2),
-                    Add,
+                    Add(GENERAL_REG1, GENERAL_REG2, GENERAL_REG1),
                     Wr(3, GENERAL_REG1),
                     Rd(2, GENERAL_REG2),
-                    Less,
+                    Less(GENERAL_REG1, GENERAL_REG2, GENERAL_REG1),
                     Brnc(15, 30),
                     End,
                 ];
@@ -137,10 +137,10 @@ pub mod test {
                     Jump(2),
                     Rd(3, GENERAL_REG1),
                     Rd(1, GENERAL_REG2),
-                    Add,
+                    Add(GENERAL_REG1, GENERAL_REG2, GENERAL_REG1),
                     Wr(3, GENERAL_REG1),
                     Rd(2, GENERAL_REG2),
-                    Less,
+                    Less(GENERAL_REG1, GENERAL_REG2, GENERAL_REG1),
                     Brnc(10, 22),
                     End,
                 ];
@@ -163,10 +163,10 @@ pub mod test {
                     Move(GENERAL_REG1, POINTER_REG),
                     Rd(4, GENERAL_REG1),
                     Rd(3, GENERAL_REG2),
-                    Add,
+                    Add(GENERAL_REG1, GENERAL_REG2, GENERAL_REG1),
                     Wr(4, GENERAL_REG1),
                     Rd(2, GENERAL_REG2),
-                    Less,
+                    Less(GENERAL_REG1, GENERAL_REG2, GENERAL_REG1),
                     Res(0, 0),
                     Brnc(1, 12),
                     Debug(POINTER_REG),
@@ -174,7 +174,7 @@ pub mod test {
                     Rdc(1, GENERAL_REG1), // size
                     SweepUnoptimized,
                     Alc(GENERAL_REG2),
-                    Sub,
+                    Sub(GENERAL_REG1, GENERAL_REG2, GENERAL_REG1),
                     Idx(GENERAL_REG1),
                     Wrp(GENERAL_REG2),
                     End,
@@ -190,7 +190,7 @@ pub mod test {
                     Wr(2, GENERAL_REG1),
                     Rd(3, GENERAL_REG1),
                     Rd(3, GENERAL_REG2),
-                    Add,
+                    Add(GENERAL_REG1, GENERAL_REG2, GENERAL_REG1),
                     Rd(2, POINTER_REG),
                     RAlc(GENERAL_REG1),
                     Idx(GENERAL_REG2),
@@ -199,7 +199,7 @@ pub mod test {
                     Move(GENERAL_REG1, GENERAL_REG3),
                     Move(GENERAL_REG1, POINTER_REG),
                     Rd(3, GENERAL_REG1),
-                    Sub,
+                    Sub(GENERAL_REG1, GENERAL_REG2, GENERAL_REG1),
                     Idx(GENERAL_REG1),
                     Rdp(GENERAL_REG1),
                     Debug(GENERAL_REG1),
@@ -207,7 +207,7 @@ pub mod test {
                     //Dalc,
                     Move(GENERAL_REG3, POINTER_REG),
                     Rd(3, GENERAL_REG1),
-                    Sub,
+                    Sub(GENERAL_REG1, GENERAL_REG2, GENERAL_REG1),
                     Idx(GENERAL_REG1),
                     Rd(1, GENERAL_REG1),
                     Wrp(GENERAL_REG1),
@@ -503,7 +503,7 @@ pub mod test {
                     // get len
                     Rd(1, GENERAL_REG2),
                     // compare
-                    Less,
+                    Less(GENERAL_REG1, GENERAL_REG2, GENERAL_REG1),
                     Brnc(10 /* another round */, 20 /* end of loop */),
                     // loop body
                     // get idx
@@ -517,21 +517,39 @@ pub mod test {
                     // increment idx
                     Rd(3, GENERAL_REG1),
                     Rd(2, GENERAL_REG2),
-                    Add,
+                    Add(GENERAL_REG1, GENERAL_REG2, GENERAL_REG1),
                     Wr(3, GENERAL_REG1),
                     // loop ends here
                     Goto(6),
                     End,
                 ];
-                /* this would be an equivalent code in C
+                /* equivalent C code
                 int main(int argc, char** argv) {
-                    // here we start from 0 because in our VM index(0) is for self so we have to skip it
-                    // but this is not the case in C
+                    // here we start from 0 because in our VM index(0) is for header so we have to skip it
+                    // but this is not the case in C nor Ruda
                     for (int i = 0; i < argc; i++) {
                         printf("%s\n", argv[i]);
                     }
-                
-                 */
+                    
+                    */
+                    true
+                }
+            11 => {
+                context.memory.strings.pool = vec![
+                    "hello".chars().collect(),
+                    "world".chars().collect(),
+                    ];
+                context.memory.stack.data = vec![
+                    Types::Int(50),
+                    Types::Int(10),
+                ];
+                context.code.data = vec![
+                    Rdc(0, GENERAL_REG1),
+                    Rdc(1, GENERAL_REG2),
+                    Less(GENERAL_REG1, GENERAL_REG2, GENERAL_REG3),
+                    Debug(GENERAL_REG3),
+                    End,
+                ];
                 true
             }
             _ => {
