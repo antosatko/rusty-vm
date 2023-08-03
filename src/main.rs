@@ -2,6 +2,7 @@ use reader::reader::*;
 extern crate runtime;
 use runtime::runtime_types::*;
 use std::{env, time::SystemTime, mem, fs::read};
+mod stringify;
 
 mod reader;
 mod test;
@@ -31,6 +32,14 @@ fn main() {
                 .as_millis(),
         ));
     }
+    println!("original code: {:?}", ctx.code.data);
+    let str = stringify::stringify(&ctx);
+    println!("stringified: {:?}", str);
+    let retrieved = stringify::parse(&str);
+    println!("parsed: {:?}", retrieved);
+
+    // print path to Rudastd from environment variable
+    println!("Rudastd path: {:?}", env::var("RUDA_PATH"));
 }
 
 fn data_report(ctx: &Context, runtime: Option<u128>) {

@@ -1,10 +1,8 @@
 pub mod test {
-    use std::mem;
+    use std::{collections::HashMap, env, mem};
 
     use crate::runtime::runtime_types::{Context, Instructions::*, Types::*, *};
     use libloading::Library;
-
-    const STD: &str = "../rusty_standard_lib/{name}/target/debug/{name}.dll";
 
     const ID: usize = 10;
     pub fn test_init(id: Option<usize>, context: &mut Context) -> bool {
@@ -248,7 +246,7 @@ pub mod test {
                         // name, age, height (includes header)
                         len: 4,
                         pointers: 1,
-                        methods: vec![],
+                        methods: HashMap::new(),
                     },
                 ];
                 context.memory.heap.data = vec![
@@ -270,9 +268,9 @@ pub mod test {
                 ];
                 context.code.data = vec![
                     Rdc(0, GENERAL_REG1),
-                        //StdOut(GENERAL_REG1),
+                    //StdOut(GENERAL_REG1),
                     Rdc(1, GENERAL_REG1),
-                        //StdOut(GENERAL_REG1),
+                    //StdOut(GENERAL_REG1),
                     Rdc(0, GENERAL_REG1),
                     Move(GENERAL_REG1, POINTER_REG),
                     Len(GENERAL_REG1),
@@ -285,7 +283,7 @@ pub mod test {
                     Rdp(POINTER_REG),
                     // concat with ", his height is: "
                     Rdc(4, GENERAL_REG1),
-                        //StrCat(GENERAL_REG1),
+                    //StrCat(GENERAL_REG1),
                     // store in general reg 3 for later use
                     Move(POINTER_REG, GENERAL_REG3),
                     // use idxk to get height
@@ -297,9 +295,9 @@ pub mod test {
                     IntoStr(GENERAL_REG1),
                     // swap with concatenated string
                     Swap(GENERAL_REG3, POINTER_REG),
-                        //StrCat(GENERAL_REG3),
+                    //StrCat(GENERAL_REG3),
                     // print
-                        //StdOut(POINTER_REG),
+                    //StdOut(POINTER_REG),
                     End,
                 ];
                 true
@@ -321,12 +319,7 @@ pub mod test {
                         len: 4,
                         // brand name
                         pointers: 1,
-                        methods: vec![
-                            // trait 0
-                            // drive = 1
-                            // stop =
-                            vec![9, 19],
-                        ],
+                        methods: HashMap::from_iter(vec![(0, vec![9, 19])]),
                     },
                     // struct motorcycle, 3 fields, brand name, model, speed, id = 1
                     NonPrimitiveType {
@@ -336,7 +329,23 @@ pub mod test {
                         len: 4,
                         // brand name, model
                         pointers: 2,
-                        methods: vec![],
+                        methods: HashMap::new(),
+                    },
+                ];
+                context.memory.fun_table = vec![
+                    // random thing just to test if it works
+                    FunSpec {
+                        name: "todo!()".to_string(),
+                        params: vec![],
+                        stack_size: Some((13, 5)),
+                        loc: 55,
+                    },
+                    // drive
+                    FunSpec {
+                        name: "drive".to_string(),
+                        params: vec![],
+                        stack_size: Some((13, 5)),
+                        loc: 56,
                     },
                 ];
                 context.memory.strings.pool = vec![
@@ -411,16 +420,16 @@ pub mod test {
                     // cocnatenate what we have so far so we save space in registers
                     // get pointer to "I am driving with"
                     Rdc(9, POINTER_REG),
-                        //StrCat(GENERAL_REG1),
+                    //StrCat(GENERAL_REG1),
                     // concatenate with " at "
                     Rdc(11, GENERAL_REG1),
-                        //StrCat(GENERAL_REG1),
+                    //StrCat(GENERAL_REG1),
                     // concatenate with speed
-                        //StrCat(GENERAL_REG2),
+                    //StrCat(GENERAL_REG2),
                     // concatenate with " km/h"
                     Rdc(12, GENERAL_REG1),
-                        //StrCat(GENERAL_REG1),
-                        //StdOut(POINTER_REG),
+                    //StrCat(GENERAL_REG1),
+                    //StdOut(POINTER_REG),
                     // load return value into return register
                     Rd(1, POINTER_REG),
                     IdxK(2),
@@ -428,7 +437,7 @@ pub mod test {
                     Ret,
                     // method stop for car
                     Rdc(1, GENERAL_REG1),
-                        //StdOut(GENERAL_REG1),
+                    //StdOut(GENERAL_REG1),
                     Ret,
                 ];
                 true
@@ -441,13 +450,13 @@ pub mod test {
                     "You wrote: ".chars().collect(),
                     "hello file".chars().collect(),
                     "bye file".chars().collect(),
-                    ];
+                ];
                 context.memory.stack.data = vec![
                     Types::Pointer(0, PointerTypes::String),
                     Types::Pointer(1, PointerTypes::String),
                     Types::Pointer(2, PointerTypes::String),
                     Types::Pointer(3, PointerTypes::String),
-                    ];
+                ];
                 context.code.data = vec![
                     Rdc(0, POINTER_REG),
                     Cal(0, 1),
@@ -475,20 +484,19 @@ pub mod test {
             }
             10 => {
                 context.set_libs(load_libs(vec!["io"]));
-                context.memory.heap.data = vec![
-                    [Types::Usize(656645),Types::Usize(656645)].to_vec(),
-                ];
+                context.memory.heap.data =
+                    vec![[Types::Usize(656645), Types::Usize(656645)].to_vec()];
                 context.memory.strings.pool = vec![
                     "Write something: ".chars().collect(),
                     "You wrote: ".chars().collect(),
                     "hello file".chars().collect(),
-                    ];
+                ];
                 context.memory.stack.data = vec![
                     Types::Null,     // args array
                     Types::Usize(1), // idx
                     Types::Usize(1), // step
-                    Types::Usize(1), // len
-                    ];
+                    Types::Null,     // len
+                ];
                 context.code.data = vec![
                     Res(4, 0),
                     // get args
@@ -530,26 +538,24 @@ pub mod test {
                     for (int i = 0; i < argc; i++) {
                         printf("%s\n", argv[i]);
                     }
-                    
-                    */
-                    true
                 }
+                */
+                true
+            }
             11 => {
-                context.memory.strings.pool = vec![
-                    "hello".chars().collect(),
-                    "world".chars().collect(),
-                    ];
                 context.memory.stack.data = vec![
-                    Types::Int(50),
-                    Types::Int(10),
+                    Int(50),
+                    Int(50),
+                    Int(50),
+                    Int(50),
+                    Int(50),
+                    Int(50),
+                    Int(50),
+                    Int(50),
+                    Int(50),
+                    Int(50),
                 ];
-                context.code.data = vec![
-                    Rdc(0, GENERAL_REG1),
-                    Rdc(1, GENERAL_REG2),
-                    Less(GENERAL_REG1, GENERAL_REG2, GENERAL_REG3),
-                    Debug(GENERAL_REG3),
-                    End,
-                ];
+                context.code.data = vec![];
                 true
             }
             _ => {
@@ -578,7 +584,9 @@ pub mod test {
     }
     // returns path to standard library
     pub fn std_path(lib: &str) -> String {
-        let lib = format!("{}", STD.replace("{name}", lib));
+        let mut std = env::var("RUDA_PATH").unwrap_or_else(|_| "std".to_string());
+        std.push_str("\\stdlib\\{name}");
+        let lib = format!("{}", std.replace("{name}", lib));
         lib
     }
 }

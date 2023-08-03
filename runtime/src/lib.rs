@@ -711,7 +711,7 @@ impl Context {
             }
             Mtd(obj, trt, method) => {
                 if let Types::NonPrimitive(id) = self.memory.registers[obj] {
-                    if let Some(method) = self.memory.non_primitives[id].methods[trt].get(method) {
+                    if let Some(method) = self.memory.non_primitives[id].methods.get(&trt).unwrap().get(method) {
                         self.memory.stack.call_stack[self.memory.stack.ptr].code_ptr =
                             self.code.ptr;
                         self.code.ptr = *method;
@@ -1429,6 +1429,7 @@ pub mod runtime_types {
         pub data: Vec<Instructions>,
         pub ptr: usize,
     }
+    #[derive(Debug)]
     pub struct FunSpec {
         pub name: String,
         pub params: Vec<MemoryLoc>,
@@ -1436,6 +1437,7 @@ pub mod runtime_types {
         pub stack_size: Option<(usize, usize)>,
         pub loc: usize,
     }
+    #[derive(Debug)]
     pub enum MemoryLoc {
         Stack(usize),
         Register(usize),
@@ -1561,9 +1563,9 @@ pub mod runtime_types {
         pub len: usize,
         pub pointers: usize,
         // first index is trait id, second is method id
-        pub methods: Vec<Vec<usize>>,
+        pub methods: HashMap<usize, Vec<usize>>,
     }
-    use std::{clone, fmt, rc::Rc, sync::Arc};
+    use std::{clone, fmt, rc::Rc, sync::Arc, hash::Hash, collections::HashMap};
 
     use super::{
         lib::Library,
@@ -1698,7 +1700,7 @@ pub mod runtime_types {
         Ret,
         /// Unfreeze | returns registers to their last freezed state
         Ufrz,
-        /// Reserve: size | reserves <size> on stack and advances callstack, also saves number of pointers for faster memory sweeps
+        /// Reserve: size ptrs | reserves <size> on stack and advances callstack, also saves number of pointers for faster memory sweeps
         Res(usize, usize),
         /// Swap: reg1 reg2   | swaps <reg1> and <reg2>
         Swap(usize, usize),
@@ -1775,7 +1777,7 @@ pub mod runtime_types {
         IntoStr(usize),
         /// Reserve dynamic: id_reg | prepares memory for anonymous function call (may allocate size on stack) based on fun_table(id_reg).stack_size
         ResD(usize),
-        /// Argument dynamic: id_reg | pushes arguments to destination(stack or registers) based on fun_table(id_reg).params
+        /// Argument dynamic: id_reg arg_num value_reg | pushes arguments to destination(stack or registers) based on fun_table(id_reg).params
         ArgD(usize, usize, usize),
     }
     impl fmt::Display for Instructions {
