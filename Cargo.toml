@@ -10,6 +10,7 @@ colored = "2.0.0"
 enable-ansi-support = "0.2.1"
 runtime = {path = "./runtime"}
 libloading = "0.7.0"
+clap = { version = "4.3.19", features = ["derive"] }
 
 
 [profile.dev]

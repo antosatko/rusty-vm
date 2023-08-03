@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 
-use runtime::{
-    runtime_types::{Context, Instructions, Types, PointerTypes, NonPrimitiveTypes, NonPrimitiveType, FunSpec, MemoryLoc},
-    *,
-};
+use runtime::runtime_types::{Context, Instructions, Types, PointerTypes, NonPrimitiveTypes, NonPrimitiveType, FunSpec, MemoryLoc};
+
 
 #[derive(Debug)]
 pub struct Data {

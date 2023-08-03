@@ -909,7 +909,7 @@ impl Context {
                 self.memory.registers[POINTER_REG] = Types::Pointer(
                     self.memory
                         .strings
-                        .from_String(self.memory.registers[reg].to_str(&self.memory)),
+                        .from_string(self.memory.registers[reg].to_str(&self.memory)),
                     PointerTypes::String,
                 );
                 self.next_line();
@@ -1363,7 +1363,7 @@ pub mod runtime_types {
                 self.pool.len() - 1
             }
         }
-        pub fn from_String(&mut self, str: String) -> usize {
+        pub fn from_string(&mut self, str: String) -> usize {
             // either push a new string or occupy a deleted string
             if let Some(loc) = self.garbage.pop() {
                 self.pool[loc] = str.chars().collect();
@@ -1417,7 +1417,7 @@ pub mod runtime_types {
         pub fn push_string_array(&mut self, arr: Vec<&str>) -> Vec<usize> {
             let mut temp = Vec::with_capacity(arr.len());
             for str in arr {
-                temp.push(self.from_String(str.to_owned()));
+                temp.push(self.from_string(str.to_owned()));
             }
             temp
         }

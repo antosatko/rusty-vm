@@ -1,57 +1,95 @@
-use reader::reader::*;
 extern crate runtime;
+use enable_ansi_support::enable_ansi_support;
 use runtime::runtime_types::*;
-use std::{env, time::SystemTime, mem, fs::read};
+use std::time::SystemTime;
+
 mod stringify;
 
-mod reader;
 mod test;
-//mod writer;
+
+use clap::Parser;
+
+
+#[derive(Parser, Debug)]
+#[clap(name = "Ruda VM", version = "0.1.0", author = "antosatko", about = "Ruda Virtual Machine CLI", after_help = "This is a CLI for the Ruda Virtual Machine. It can be used to run Ruda bytecode files (.rdbin).")]
+struct Args {
+    /// Input file
+    input: Option<String>,
+
+    /// Post-process data report
+    #[clap(short, long, default_value = "false")]
+    report: bool,
+
+    /// Measure runtime
+    #[clap(short, long, default_value = "false")]
+    time: bool,
+}
+
 fn main() {
-    let mut args = env::args();
-    let mut report = false;
-    /*let mut ctx = match args.nth(1) {
-        Some(src) => read_file(src, Context::new()),
+    let args = Args::parse();
+    let mut report = args.report;
+    let mut ctx = match args.input {
+        Some(src) => {
+            let file = std::fs::read(src).unwrap();
+            let mut ctx = Context::new();
+            let data = stringify::parse(&String::from_utf8(file).unwrap());
+            ctx.memory.stack.data = data.values;
+            ctx.memory.strings.pool = data.strings;
+            ctx.code.data = data.instructions;
+            ctx.memory.non_primitives = data.non_primitives;
+            ctx.memory.fun_table = data.fun_table;
+            let libs = test::test::load_libs(vec!["io", "string"]);
+            ctx.libs = libs;
+            ctx
+        }
         None => {
             /*println!("Path not specified. Program will terminate."); return;*/
             use test::test::*;
             let mut ctx = Context::new();
             report = test_init(None, &mut ctx);
+            let stringified = stringify::stringify(&ctx);
+            // write to file
+            std::fs::write("test.rdbin", stringified).unwrap();
             ctx
         }
-    };*/
-    let mut ctx = Context::new();
-    report = test::test::test_init(None, &mut ctx);
-    let start_time = SystemTime::now();
-    ctx.run();
-    if report {
-        data_report(&ctx, Some(
-            SystemTime::now()
-                .duration_since(start_time)
-                .unwrap()
-                .as_millis(),
-        ));
+    };
+    match args.time {
+        true => {
+            let start_time = SystemTime::now();
+            ctx.run();
+            match enable_ansi_support() {
+                Ok(_) => {
+                    println!("\x1b[90mTotal run time: {} ms\x1b[0m", SystemTime::now()
+                    .duration_since(start_time)
+                    .unwrap()
+                    .as_millis());
+                }
+                Err(_) => {
+                    println!("Total run time: {} ms", SystemTime::now()
+                    .duration_since(start_time)
+                    .unwrap()
+                    .as_millis());
+                }
+            }
+            if report {
+                data_report(&ctx);
+            }
+        }
+        false => {
+            ctx.run();
+            if report {
+                data_report(&ctx);
+            }
+        }
     }
-    println!("original code: {:?}", ctx.code.data);
-    let str = stringify::stringify(&ctx);
-    println!("stringified: {:?}", str);
-    let retrieved = stringify::parse(&str);
-    println!("parsed: {:?}", retrieved);
-
-    // print path to Rudastd from environment variable
-    println!("Rudastd path: {:?}", env::var("RUDA_PATH"));
 }
 
-fn data_report(ctx: &Context, runtime: Option<u128>) {
+fn data_report(ctx: &Context) {
     use colored::Colorize;
-    use enable_ansi_support::enable_ansi_support;
     match enable_ansi_support() {
         Ok(_) => {
             print!("\n");
             println!("{}", "Post-process data report.".yellow());
-            if let Some(time) = runtime {
-                println!("\x1b[90mTotal run time: {} ms\x1b[0m", time);
-            }
             println!("{} {:?}", "Heap:".magenta(), ctx.memory.heap.data);
             println!("{} {:?}", "Stack:".magenta(), ctx.memory.stack.data);
             println!("{} {:?}", "Registers:".magenta(), ctx.memory.registers);
@@ -60,25 +98,10 @@ fn data_report(ctx: &Context, runtime: Option<u128>) {
         Err(_) => {
             print!("\n");
             println!("{}", "Post-process data report.");
-            if let Some(time) = runtime {
-                println!("Total run time: {} ms", time);
-            }
             println!("{} {:?}", "Heap:", ctx.memory.heap.data);
             println!("{} {:?}", "Stack:", ctx.memory.stack.data);
             println!("{} {:?}", "Registers:", ctx.memory.registers);
             println!("{} {:?}", "Strings:", ctx.memory.strings.pool);
         }
     }
-    println!("size in bytes: {}", mem::size_of::<Context>());
-    println!("real size in bytes: {}", ctx.size());
-    /*let mut ctx = Context::new();
-    let time = SystemTime::now();
-    for _ in 0..100000 {
-        ctx.memory.strings.from_str("Hello World!");
-    }
-    ctx.memory.gc_sweep();
-    println!("time taken: {}", SystemTime::now().duration_since(time).unwrap().as_millis());
-    // stop the program from exiting
-    //std::io::stdin().read_line(&mut String::new()).unwrap();
-    println!("gc: {:?}", ctx.memory.gc.memory_swept);*/
 }
