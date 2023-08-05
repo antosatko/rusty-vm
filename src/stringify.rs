@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
-use runtime::runtime_types::{Context, Instructions, Types, PointerTypes, NonPrimitiveTypes, NonPrimitiveType, FunSpec, MemoryLoc};
-
+use runtime::runtime_types::{
+    Context, FunSpec, Instructions, MemoryLoc, NonPrimitiveType, NonPrimitiveTypes, PointerTypes,
+    Types,
+};
 
 #[derive(Debug)]
 pub struct Data {
@@ -121,7 +123,7 @@ pub fn fun_spec_into_string(fun_spec: &FunSpec, str: &mut String) {
         str.push(1 as char);
         str.push_str(&b256str(*size, 4));
         str.push_str(&b256str(*ptrs, 4));
-    }else {
+    } else {
         str.push(0 as char);
     }
     let len = fun_spec.params.len();
@@ -131,11 +133,11 @@ pub fn fun_spec_into_string(fun_spec: &FunSpec, str: &mut String) {
             MemoryLoc::Stack(loc) => {
                 str.push(0 as char);
                 str.push_str(&b256str(*loc, 8));
-            },
+            }
             MemoryLoc::Register(loc) => {
                 str.push(1 as char);
                 str.push_str(&b256str(*loc, 1));
-            },
+            }
         }
     }
 }
@@ -149,7 +151,7 @@ pub fn fun_spec_from_string(str: &mut std::iter::Peekable<std::str::Chars<'_>>) 
             let size = read_number(str, 4);
             let ptrs = read_number(str, 4);
             Some((size, ptrs))
-        },
+        }
         _ => panic!("Invalid stack size flag"),
     };
     let len = read_number(str, 8);
@@ -243,7 +245,6 @@ pub fn non_prim_into_string(non_prim: &NonPrimitiveType, str: &mut String) {
     }
 }
 
-
 fn read_number(str: &mut std::iter::Peekable<std::str::Chars<'_>>, len: usize) -> usize {
     let mut number = 0;
     for _ in 0..len {
@@ -274,15 +275,33 @@ pub fn byte_into_string(byte: Instructions, str: &mut String) {
         Instructions::Ufrz => s(15),
         Instructions::Res(n1, n2) => s(16) + &b256str(n1, 4) + &b256str(n2, 4),
         Instructions::Swap(n1, n2) => s(17) + &b256str(n1, 1) + &b256str(n2, 1),
-        Instructions::Add(n1, n2, n3) => s(18) + &b256str(n1, 1) + &b256str(n2, 1) + &b256str(n3, 1),
-        Instructions::Sub(n1, n2, n3) => s(19) + &b256str(n1, 1) + &b256str(n2, 1) + &b256str(n3, 1),
-        Instructions::Mul(n1, n2, n3) => s(20) + &b256str(n1, 1) + &b256str(n2, 1) + &b256str(n3, 1),
-        Instructions::Div(n1, n2, n3) => s(21) + &b256str(n1, 1) + &b256str(n2, 1) + &b256str(n3, 1),
-        Instructions::Mod(n1, n2, n3) => s(22) + &b256str(n1, 1) + &b256str(n2, 1) + &b256str(n3, 1),
-        Instructions::Equ(n1, n2, n3) => s(23) + &b256str(n1, 1) + &b256str(n2, 1) + &b256str(n3, 1),
-        Instructions::Grt(n1, n2, n3) => s(24) + &b256str(n1, 1) + &b256str(n2, 1) + &b256str(n3, 1),
-        Instructions::Less(n1, n2, n3) => s(25) + &b256str(n1, 1) + &b256str(n2, 1) + &b256str(n3, 1),
-        Instructions::And(n1, n2, n3) => s(26) + &b256str(n1, 1) + &b256str(n2, 1) + &b256str(n3, 1),
+        Instructions::Add(n1, n2, n3) => {
+            s(18) + &b256str(n1, 1) + &b256str(n2, 1) + &b256str(n3, 1)
+        }
+        Instructions::Sub(n1, n2, n3) => {
+            s(19) + &b256str(n1, 1) + &b256str(n2, 1) + &b256str(n3, 1)
+        }
+        Instructions::Mul(n1, n2, n3) => {
+            s(20) + &b256str(n1, 1) + &b256str(n2, 1) + &b256str(n3, 1)
+        }
+        Instructions::Div(n1, n2, n3) => {
+            s(21) + &b256str(n1, 1) + &b256str(n2, 1) + &b256str(n3, 1)
+        }
+        Instructions::Mod(n1, n2, n3) => {
+            s(22) + &b256str(n1, 1) + &b256str(n2, 1) + &b256str(n3, 1)
+        }
+        Instructions::Equ(n1, n2, n3) => {
+            s(23) + &b256str(n1, 1) + &b256str(n2, 1) + &b256str(n3, 1)
+        }
+        Instructions::Grt(n1, n2, n3) => {
+            s(24) + &b256str(n1, 1) + &b256str(n2, 1) + &b256str(n3, 1)
+        }
+        Instructions::Less(n1, n2, n3) => {
+            s(25) + &b256str(n1, 1) + &b256str(n2, 1) + &b256str(n3, 1)
+        }
+        Instructions::And(n1, n2, n3) => {
+            s(26) + &b256str(n1, 1) + &b256str(n2, 1) + &b256str(n3, 1)
+        }
         Instructions::Or(n1, n2, n3) => s(27) + &b256str(n1, 1) + &b256str(n2, 1) + &b256str(n3, 1),
         Instructions::Not(n1, n2) => s(28) + &b256str(n1, 1) + &b256str(n2, 1),
         Instructions::Cal(n1, n2) => s(29) + &b256str(n1, 1) + &b256str(n2, 1),
@@ -299,9 +318,13 @@ pub fn byte_into_string(byte: Instructions, str: &mut String) {
         Instructions::AlcS(n) => s(40) + &b256str(n, 4),
         Instructions::IdxK(n) => s(41) + &b256str(n, 4),
         Instructions::TRng(n1, n2) => s(42) + &b256str(n1, 1) + &b256str(n2, 4),
-        Instructions::CpRng(n1, n2, n3) => s(43) + &b256str(n1, 1) + &b256str(n2, 1) + &b256str(n3, 4),
+        Instructions::CpRng(n1, n2, n3) => {
+            s(43) + &b256str(n1, 1) + &b256str(n2, 1) + &b256str(n3, 4)
+        }
         Instructions::Break(n) => s(44) + &b256str(n, 1),
-        Instructions::Mtd(n1, n2, n3) => s(45) + &b256str(n1, 1) + &b256str(n2, 4) + &b256str(n3, 4),
+        Instructions::Mtd(n1, n2, n3) => {
+            s(45) + &b256str(n1, 1) + &b256str(n2, 4) + &b256str(n3, 4)
+        }
         Instructions::Panic => s(46),
         Instructions::Catch => s(47),
         Instructions::CatchId(n) => s(48) + &b256str(n, 4),
@@ -310,11 +333,12 @@ pub fn byte_into_string(byte: Instructions, str: &mut String) {
         Instructions::StrNew => s(51),
         Instructions::IntoStr(n) => s(52) + &b256str(n, 1),
         Instructions::ResD(n) => s(53) + &b256str(n, 1),
-        Instructions::ArgD(n1, n2, n3) => s(54) + &b256str(n1, 1) + &b256str(n2, 1) + &b256str(n3, 1),
+        Instructions::ArgD(n1, n2, n3) => {
+            s(54) + &b256str(n1, 1) + &b256str(n2, 1) + &b256str(n3, 1)
+        }
     };
     str.push_str(&append);
 }
-
 
 pub fn str_into_byte(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Instructions {
     let code = chars.next().unwrap() as u8;
@@ -337,16 +361,56 @@ pub fn str_into_byte(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> In
         15 => Instructions::Ufrz,
         16 => Instructions::Res(read_number(chars, 4), read_number(chars, 4)),
         17 => Instructions::Swap(read_number(chars, 1), read_number(chars, 1)),
-        18 => Instructions::Add(read_number(chars, 1), read_number(chars, 1), read_number(chars, 1)),
-        19 => Instructions::Sub(read_number(chars, 1), read_number(chars, 1), read_number(chars, 1)),
-        20 => Instructions::Mul(read_number(chars, 1), read_number(chars, 1), read_number(chars, 1)),
-        21 => Instructions::Div(read_number(chars, 1), read_number(chars, 1), read_number(chars, 1)),
-        22 => Instructions::Mod(read_number(chars, 1), read_number(chars, 1), read_number(chars, 1)),
-        23 => Instructions::Equ(read_number(chars, 1), read_number(chars, 1), read_number(chars, 1)),
-        24 => Instructions::Grt(read_number(chars, 1), read_number(chars, 1), read_number(chars, 1)),
-        25 => Instructions::Less(read_number(chars, 1), read_number(chars, 1), read_number(chars, 1)),
-        26 => Instructions::And(read_number(chars, 1), read_number(chars, 1), read_number(chars, 1)),
-        27 => Instructions::Or(read_number(chars, 1), read_number(chars, 1), read_number(chars, 1)),
+        18 => Instructions::Add(
+            read_number(chars, 1),
+            read_number(chars, 1),
+            read_number(chars, 1),
+        ),
+        19 => Instructions::Sub(
+            read_number(chars, 1),
+            read_number(chars, 1),
+            read_number(chars, 1),
+        ),
+        20 => Instructions::Mul(
+            read_number(chars, 1),
+            read_number(chars, 1),
+            read_number(chars, 1),
+        ),
+        21 => Instructions::Div(
+            read_number(chars, 1),
+            read_number(chars, 1),
+            read_number(chars, 1),
+        ),
+        22 => Instructions::Mod(
+            read_number(chars, 1),
+            read_number(chars, 1),
+            read_number(chars, 1),
+        ),
+        23 => Instructions::Equ(
+            read_number(chars, 1),
+            read_number(chars, 1),
+            read_number(chars, 1),
+        ),
+        24 => Instructions::Grt(
+            read_number(chars, 1),
+            read_number(chars, 1),
+            read_number(chars, 1),
+        ),
+        25 => Instructions::Less(
+            read_number(chars, 1),
+            read_number(chars, 1),
+            read_number(chars, 1),
+        ),
+        26 => Instructions::And(
+            read_number(chars, 1),
+            read_number(chars, 1),
+            read_number(chars, 1),
+        ),
+        27 => Instructions::Or(
+            read_number(chars, 1),
+            read_number(chars, 1),
+            read_number(chars, 1),
+        ),
         28 => Instructions::Not(read_number(chars, 1), read_number(chars, 1)),
         29 => Instructions::Cal(read_number(chars, 1), read_number(chars, 1)),
         30 => Instructions::End,
@@ -362,9 +426,17 @@ pub fn str_into_byte(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> In
         40 => Instructions::AlcS(read_number(chars, 4)),
         41 => Instructions::IdxK(read_number(chars, 4)),
         42 => Instructions::TRng(read_number(chars, 1), read_number(chars, 4)),
-        43 => Instructions::CpRng(read_number(chars, 1), read_number(chars, 1), read_number(chars, 4)),
+        43 => Instructions::CpRng(
+            read_number(chars, 1),
+            read_number(chars, 1),
+            read_number(chars, 4),
+        ),
         44 => Instructions::Break(read_number(chars, 1)),
-        45 => Instructions::Mtd(read_number(chars, 1), read_number(chars, 4), read_number(chars, 4)),
+        45 => Instructions::Mtd(
+            read_number(chars, 1),
+            read_number(chars, 4),
+            read_number(chars, 4),
+        ),
         46 => Instructions::Panic,
         47 => Instructions::Catch,
         48 => Instructions::CatchId(read_number(chars, 4)),
@@ -373,19 +445,15 @@ pub fn str_into_byte(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> In
         51 => Instructions::StrNew,
         52 => Instructions::IntoStr(read_number(chars, 1)),
         53 => Instructions::ResD(read_number(chars, 1)),
-        _ => panic!("Unknown instruction")
+        _ => panic!("Unknown instruction"),
     };
     byte
 }
 
 pub fn value_into_byte(value: Types, str: &mut String) {
     let res = match value {
-        Types::Int(n) => s(0) + &b256str(unsafe {
-            std::mem::transmute::<i64, usize>(n)
-        }, 8),
-        Types::Float(n) => s(1) + &b256str(unsafe {
-            std::mem::transmute::<f64, usize>(n)
-        }, 8),
+        Types::Int(n) => s(0) + &b256str(unsafe { std::mem::transmute::<i64, usize>(n) }, 8),
+        Types::Float(n) => s(1) + &b256str(unsafe { std::mem::transmute::<f64, usize>(n) }, 8),
         Types::Usize(n) => s(2) + &b256str(n, 8),
         Types::Char(n) => s(3) + &b256str(n as usize, 1),
         Types::Bool(n) => s(4) + &b256str(n as usize, 1),
@@ -401,12 +469,8 @@ pub fn value_into_byte(value: Types, str: &mut String) {
 fn bytes_into_value(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Types {
     let byte = chars.next().unwrap();
     match byte as u8 {
-        0 => Types::Int(unsafe {
-            std::mem::transmute::<usize, i64>(read_number(chars, 8))
-        }),
-        1 => Types::Float(unsafe {
-            std::mem::transmute::<usize, f64>(read_number(chars, 8))
-        }),
+        0 => Types::Int(unsafe { std::mem::transmute::<usize, i64>(read_number(chars, 8)) }),
+        1 => Types::Float(unsafe { std::mem::transmute::<usize, f64>(read_number(chars, 8)) }),
         2 => Types::Usize(read_number(chars, 8)),
         3 => Types::Char(read_number(chars, 1) as u8 as char),
         4 => Types::Bool(read_number(chars, 1) != 0),
@@ -415,7 +479,7 @@ fn bytes_into_value(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Typ
         7 => Types::Null,
         8 => Types::Void,
         9 => Types::NonPrimitive(read_number(chars, 8)),
-        _ => panic!("Unknown type")
+        _ => panic!("Unknown type"),
     }
 }
 

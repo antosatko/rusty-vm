@@ -500,7 +500,7 @@ pub mod test {
                 context.code.data = vec![
                     Res(4, 0),
                     // get args
-                    Cal(0, 11),
+                    Cal(0, 12),
                     Wr(4, RETURN_REG),
                     Move(RETURN_REG, GENERAL_REG1),
                     Len(RETURN_REG),

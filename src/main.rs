@@ -9,9 +9,14 @@ mod test;
 
 use clap::Parser;
 
-
 #[derive(Parser, Debug)]
-#[clap(name = "Ruda VM", version = "0.1.0", author = "antosatko", about = "Ruda Virtual Machine CLI", after_help = "This is a CLI for the Ruda Virtual Machine. It can be used to run Ruda bytecode files (.rdbin).")]
+#[clap(
+    name = "Ruda VM",
+    version = "0.1.0",
+    author = "antosatko",
+    about = "Ruda Virtual Machine CLI",
+    after_help = "This is a CLI for the Ruda Virtual Machine. It can be used to run Ruda bytecode files (.rdbin)."
+)]
 struct Args {
     /// Input file
     input: Option<String>,
@@ -23,6 +28,11 @@ struct Args {
     /// Measure runtime
     #[clap(short, long, default_value = "false")]
     time: bool,
+
+    /// runtime args
+    /// takes the rest of the arguments as a vector of strings
+    #[clap(name = "args", last = true)]
+    args: Vec<String>,
 }
 
 fn main() {
@@ -53,22 +63,29 @@ fn main() {
             ctx
         }
     };
+    ctx.memory.runtime_args = args.args;
     match args.time {
         true => {
             let start_time = SystemTime::now();
             ctx.run();
             match enable_ansi_support() {
                 Ok(_) => {
-                    println!("\x1b[90mTotal run time: {} ms\x1b[0m", SystemTime::now()
-                    .duration_since(start_time)
-                    .unwrap()
-                    .as_millis());
+                    println!(
+                        "\x1b[90mTotal run time: {} ms\x1b[0m",
+                        SystemTime::now()
+                            .duration_since(start_time)
+                            .unwrap()
+                            .as_millis()
+                    );
                 }
                 Err(_) => {
-                    println!("Total run time: {} ms", SystemTime::now()
-                    .duration_since(start_time)
-                    .unwrap()
-                    .as_millis());
+                    println!(
+                        "Total run time: {} ms",
+                        SystemTime::now()
+                            .duration_since(start_time)
+                            .unwrap()
+                            .as_millis()
+                    );
                 }
             }
             if report {

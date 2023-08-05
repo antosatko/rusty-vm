@@ -38,6 +38,7 @@ impl Context {
                     sweep_threshold: usize::MAX,
                 },
                 fun_table: vec![],
+                runtime_args: vec![],
             },
             code: Code {
                 data: vec![],
@@ -1083,6 +1084,7 @@ pub mod runtime_types {
         pub non_primitives: Vec<NonPrimitiveType>,
         pub gc: GarbageCollector,
         pub fun_table: Vec<FunSpec>,
+        pub runtime_args: Vec<String>,
     }
     pub struct GarbageCollector {
         pub sweeps_count: usize,
