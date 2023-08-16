@@ -1,21 +1,53 @@
-use std::collections::HashMap;
+/// This module is responsible for converting to and from the binary format of the VM
+
+use std::{collections::HashMap, path::PathBuf};
 
 use runtime::runtime_types::{
     Context, FunSpec, Instructions, MemoryLoc, NonPrimitiveType, NonPrimitiveTypes, PointerTypes,
     Types,
 };
 
+pub const MAGIC_NUMBER: &str = "RUDA";
+
 #[derive(Debug)]
+/// Contains all the data that can be written to a file
 pub struct Data {
     pub instructions: Vec<Instructions>,
     pub values: Vec<Types>,
     pub strings: Vec<Vec<char>>,
     pub non_primitives: Vec<NonPrimitiveType>,
     pub fun_table: Vec<FunSpec>,
+    pub shared_libs: Vec<ShLib>,
+}
+
+#[derive(Debug)]
+/// Describes how to find a shared library
+pub struct ShLib {
+    /// The path to the library
+    pub path: String,
+    /// Method of finding the library
+    pub owns: LibOwner,
+}
+
+#[derive(Debug)]
+/// Defines where on the system the library is located
+pub enum LibOwner {
+    /// The library is located in the standard library folder
+    Standard,
+    /// The library is located in the same folder as the binary
+    Included,
+    /// The library is located somewhere on the system
+    System,
+    /// The library is installed somewhere on the system and
+    /// can be located using the system's environment variables
+    /// (variable name, error if not found)
+    Installed(String, String),
 }
 
 pub fn stringify(ctx: &Context) -> String {
     let mut res = String::new();
+    // write magic number
+    res.push_str(MAGIC_NUMBER);
     // write length of paragraph in 8 bytes (number of instructions)
     res.push_str(&b256str(ctx.code.data.len(), 8));
     for byte in ctx.code.data.iter() {
@@ -41,11 +73,24 @@ pub fn stringify(ctx: &Context) -> String {
     for fun_spec in ctx.memory.fun_table.iter() {
         fun_spec_into_string(fun_spec, &mut res);
     }
+    // write length of paragraph in 8 bytes (number of shared libraries)
+    res.push_str(&b256str(0, 8));
     res
 }
 
 pub fn parse(str: &str) -> Data {
     let mut chars = str.chars().peekable();
+    // check magic number
+    for c in MAGIC_NUMBER.chars() {
+        match chars.next() {
+            Some(c2) => {
+                if c != c2 {
+                    panic!("The file you are trying to load is not a valid Ruda binary file");
+                }
+            }
+            None => panic!("The file you are trying to load is not a valid Ruda binary file"),
+        }
+    }
     let mut i = 0;
     // read length of paragraph in 8 bytes (number of instructions)
     let len = read_number(&mut chars, 8);
@@ -107,12 +152,87 @@ pub fn parse(str: &str) -> Data {
         fun_table.push(fun_spec_from_string(&mut chars));
         i += 1;
     }
+    // read length of paragraph in 8 bytes (number of shared libraries)
+    let len = read_number(&mut chars, 8);
+    let mut shared_libs = Vec::with_capacity(len);
+    i = 0;
+    while let Some(_) = chars.peek() {
+        if i == len {
+            break;
+        }
+        let path = read_str(&mut chars);
+        let owns = match chars.next().unwrap() as u8 {
+            0 => LibOwner::Standard,
+            1 => LibOwner::Included,
+            2 => LibOwner::System,
+            3 => {
+                let env_var = read_str(&mut chars);
+                let err = read_str(&mut chars);
+                LibOwner::Installed(env_var, err)
+            }
+            _ => panic!("Invalid library owner flag"),
+        };
+        shared_libs.push(ShLib { path, owns });
+        i += 1;
+    }
     Data {
         instructions,
         values,
         strings,
         non_primitives,
         fun_table,
+        shared_libs,
+    }
+}
+
+use std::path::Path;
+
+impl ShLib {
+    pub fn into_real_path<'a>(&'a self, bin_loc: &'a str, vm_loc: &str) -> PathBuf {
+        let mut path = Path::new(bin_loc);
+        path = path.parent().unwrap();
+        let mut path = match &self.owns {
+            LibOwner::Standard => Path::new(vm_loc).join("stdlib").join(&self.path),
+            LibOwner::Included => path.join(&self.path),
+            LibOwner::System => Path::new(&self.path).to_path_buf(),
+            LibOwner::Installed(env_var, err) => {
+                // get the path from the environment variable
+                let path = std::env::var(env_var).expect(err);
+                // set the path to the path from the environment variable and add the library name
+                Path::new(&path).join(&self.path)
+            }
+        };
+        path = {
+            // set extension for windows
+            #[cfg(target_os = "windows")]
+            {
+                path.with_extension("dll")
+            }
+            // set extension for others
+            #[cfg(not(target_os = "windows"))]
+            {
+                path.with_extension("so")
+            }
+        };
+        path = match path.canonicalize() {
+            Ok(path) => path,
+            Err(_) => panic!("Library {:?} does not exist", path),
+        };
+        path
+    }
+}
+
+pub fn lib_into_string(lib: &ShLib, str: &mut String) {
+    push_str(&lib.path, str);
+    match &lib.owns {
+        LibOwner::Standard => str.push(0 as char),
+        LibOwner::Included => str.push(1 as char),
+        LibOwner::System => str.push(2 as char),
+        LibOwner::Installed(env_var, err) => {
+            str.push(3 as char);
+            push_str(&env_var, str);
+            push_str(&err, str);
+        }
     }
 }
 
