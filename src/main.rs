@@ -29,8 +29,7 @@ struct Args {
     #[clap(short, long, default_value = "false")]
     time: bool,
 
-    /// runtime args
-    /// takes the rest of the arguments as a vector of strings
+    /// Runtime arguments for the VM
     #[clap(name = "args", last = true)]
     args: Vec<String>,
 }
