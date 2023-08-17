@@ -1957,7 +1957,6 @@ pub mod lib {
     /// public interface for the library to be used by the interpreter and the compiler
     pub trait Library {
         /// calls a function from the library with the given id and arguments and returns the result
-        /// mem: (stack, heap, string pool)
         fn call(&mut self, id: usize, mem: PublicData) -> Result<Types, ErrTypes>;
         /// returns the name of the library
         fn name(&self) -> String;

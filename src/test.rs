@@ -1,5 +1,5 @@
 pub mod test {
-    use std::{collections::HashMap, env, mem};
+    use std::{collections::HashMap, env, mem, path::PathBuf};
 
     use crate::runtime::runtime_types::{Context, Instructions::*, Types::*, *};
     use libloading::Library;
@@ -500,7 +500,7 @@ pub mod test {
                 context.code.data = vec![
                     Res(4, 0),
                     // get args
-                    Cal(0, 12),
+                    Cal(0, 4),
                     Wr(4, RETURN_REG),
                     Move(RETURN_REG, GENERAL_REG1),
                     Len(RETURN_REG),
@@ -566,6 +566,15 @@ pub mod test {
             }
         }
     }
+    pub fn load_lib(path: &PathBuf) -> Box<dyn runtime::lib::Library> {
+        let lib = unsafe { Library::new(path).unwrap() };
+        let init_fn: libloading::Symbol<fn() -> Box<dyn runtime::lib::Library>> =
+            unsafe { lib.get(b"init").unwrap() };
+        let lib_box = init_fn();
+
+        mem::forget(lib);
+        lib_box
+    }
     pub fn load_libs(libs: Vec<&str>) -> Vec<Box<dyn runtime::lib::Library>> {
         let mut result = vec![];
 
@@ -582,11 +591,21 @@ pub mod test {
         drop(libs);
         result
     }
-    // returns path to standard library
+    // Returns path to standard library
     pub fn std_path(lib: &str) -> String {
-        let mut std = env::var("RUDA_PATH").unwrap_or_else(|_| "std".to_string());
-        std.push_str("\\stdlib\\{name}");
-        let lib = format!("{}", std.replace("{name}", lib));
-        lib
+        let mut std = env::var("RUDA_PATH").expect("RUDA_PATH not set, please set it to the path of the Ruda directory");
+        
+        #[cfg(windows)]
+        {
+            std.push_str("\\stdlib\\{name}.dll");
+        }
+        
+        #[cfg(not(windows))]
+        {
+            std.push_str("stdlib/{name}.so");
+        }
+        
+        let lib_path = std.replace("{name}", lib);
+        lib_path
     }
 }
