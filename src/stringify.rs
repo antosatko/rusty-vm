@@ -222,6 +222,7 @@ impl ShLib {
     }
 }
 
+#[allow(unused)]
 pub fn lib_into_string(lib: &ShLib, str: &mut String) {
     push_str(&lib.path, str);
     match &lib.owns {
